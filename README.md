@@ -1,4 +1,3 @@
-````markdown
 # 🎵 MusicAI — Distributed Intelligent Music Recommendation Platform
 
 > A production-grade, distributed, end-to-end music recommendation platform inspired by Spotify, Netflix, and YouTube recommendation systems.
@@ -57,7 +56,7 @@ Build a distributed recommendation platform capable of:
 ✅ load testing  
 ✅ production deployment  
 
----
+
 
 # Architecture Overview
 
