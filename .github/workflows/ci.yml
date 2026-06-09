@@ -12,7 +12,7 @@ jobs:
       
       - name: Lint
         uses: golangci/golangci-lint-action@v6
-        with: { version: latest, working-directory: ./music-identity-gatekeeper , only-new-issues: false }
+        with: { version: v2.12.2, working-directory: ./music-identity-gatekeeper , only-new-issues: false }
       
       - name: Build & Test
         run: |
