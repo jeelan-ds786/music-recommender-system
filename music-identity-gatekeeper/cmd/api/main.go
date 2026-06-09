@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
@@ -20,14 +20,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not connect to Postgres: %v", err)
 	}
-	defer pgDB.Close()
+
+	defer func() {
+		if err := pgDB.Close(); err != nil {
+			log.Printf("Error closing Postgres connection: %v", err)
+		}
+	}()
 	fmt.Println("Successfully connected to Postgres!")
 
 	redisClient, err := db.ConnectRedis(cfg.REDIS_URL)
 	if err != nil {
 		log.Fatalf("Could not connect to Redis: %v", err)
 	}
-	defer redisClient.Close()
+
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			log.Printf("Error closing Redis connection: %v", err)
+		}
+	}()
 	fmt.Println("Successfully connected to Redis!")
 
 	fmt.Printf("Service is live on port %s\n", cfg.PORT)

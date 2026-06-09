@@ -27,3 +27,6 @@ data/
 *.log
 tmp/
 *.tmp
+
+# my notepad 
+*.txt

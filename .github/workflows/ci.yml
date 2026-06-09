@@ -11,7 +11,7 @@ jobs:
       
       - name: Lint
         uses: golangci/golangci-lint-action@v6
-        with: { version: latest }
+        with: { version: latest, working-directory: ./music-identity-gatekeeper }
       
       - name: Build & Test
         run: |
