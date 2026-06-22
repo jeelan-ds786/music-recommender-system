@@ -751,7 +751,6 @@ Performance + reliability
 # Engineering Principles
 
 This project emphasizes:
-
 * clean architecture
 * domain-driven design
 * scalability
