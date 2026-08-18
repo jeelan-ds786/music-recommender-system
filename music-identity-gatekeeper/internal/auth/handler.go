@@ -95,7 +95,7 @@ func (h *Handler) Login(
 		return
 	}
 
-	user, err := h.service.Login(
+	tokenPair, err := h.service.Login(
 		r.Context(),
 		req,
 	)
@@ -123,9 +123,79 @@ func (h *Handler) Login(
 		w,
 		http.StatusOK,
 		map[string]any{
-			"user_id": user.ID,
-			"email":   user.Email,
-			"auth_provider": user.AuthProvider,
+			"access_token":  tokenPair.AccessToken,
+			"refresh_token": tokenPair.RefreshToken,
+		},
+	)
+}
+
+func (h *Handler) Refresh(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	var req RefreshRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"INVALID_REQUEST_BODY",
+		)
+		return
+	}
+
+	if validationErr := ValidateStruct(req); validationErr != nil {
+		writeJSON(
+			w,
+			http.StatusBadRequest,
+			validationErr,
+		)
+		return
+	}
+
+	tokenPair, err := h.service.Refresh(
+		r.Context(),
+		req,
+	)
+
+	if err != nil {
+		writeError(
+			w,
+			http.StatusUnauthorized,
+			"INVALID_REFRESH_TOKEN",
+		)
+		return
+	}
+
+	writeJSON(
+		w,
+		http.StatusOK,
+		map[string]any{
+			"access_token":  tokenPair.AccessToken,
+			"refresh_token": tokenPair.RefreshToken,
+		},
+	)
+}
+
+func (h *Handler) Me(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		writeError(
+			w,
+			http.StatusUnauthorized,
+			"UNAUTHORIZED",
+		)
+		return
+	}
+
+	writeJSON(
+		w,
+		http.StatusOK,
+		map[string]any{
+			"user_id": userID,
 		},
 	)
 }
