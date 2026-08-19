@@ -6,21 +6,28 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
 )
 
 type Service interface {
 	Register(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
-	Login(ctx context.Context, req LoginRequest) (*user.User, error)
+	Login(ctx context.Context, req LoginRequest) (*token.TokenPair, error)
+	Refresh(ctx context.Context, req RefreshRequest) (*token.TokenPair, error)
 }
 
 type AuthService struct {
-	userRepo user.Repository
+	userRepo      user.Repository
+	tokenService *token.Service
 }
 
-func NewService(userRepo user.Repository) Service {
+func NewService(
+	userRepo user.Repository,
+	tokenService *token.Service,
+) Service {
 	return &AuthService{
-		userRepo: userRepo,
+		userRepo:      userRepo,
+		tokenService: tokenService,
 	}
 }
 
@@ -74,7 +81,7 @@ func (s *AuthService) Register(
 func (s *AuthService) Login(
 	ctx context.Context,
 	req LoginRequest,
-) (*user.User, error) {
+) (*token.TokenPair, error) {
 
 	existingUser, err := s.userRepo.GetByEmail(
 		ctx,
@@ -94,5 +101,19 @@ func (s *AuthService) Login(
 		return nil, ErrInvalidCredentials
 	}
 
-	return existingUser, nil
+	return s.tokenService.IssueTokenPair(
+		ctx,
+		existingUser.ID,
+		existingUser.AuthProvider,
+	)
+}
+
+func (s *AuthService) Refresh(
+	ctx context.Context,
+	req RefreshRequest,
+) (*token.TokenPair, error) {
+	return s.tokenService.RefreshAccessToken(
+		ctx,
+		req.RefreshToken,
+	)
 }
