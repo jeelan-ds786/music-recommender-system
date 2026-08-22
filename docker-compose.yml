@@ -14,7 +14,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["6380:6380"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -22,7 +22,7 @@ services:
       retries: 5
 
   identity-svc:
-    build: ./music-identity-gatekeeper
+    build: ./services/music-identity-gatekeeper
     ports: ["8080:8080"]
     depends_on:
       postgres:
@@ -31,4 +31,4 @@ services:
         condition: service_healthy
     environment:
       DB_URL: "postgres://muse:secret@postgres:5432/muse_identity?sslmode=disable"
-      REDIS_ADDR: "redis:6379"
+      REDIS_ADDR: "redis:6380"

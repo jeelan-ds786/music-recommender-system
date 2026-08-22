@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/config"
-	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/db"
+	"github.com/jeelan-ds786/music-recommender-system/services/music-identity-gatekeeper/internal/config"
+	"github.com/jeelan-ds786/music-recommender-system/services/music-identity-gatekeeper/internal/db"
 )
 
 func main() {

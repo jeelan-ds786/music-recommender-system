@@ -10,9 +10,9 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/auth"
-    "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/db"
-    "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
+  	"github.com/jeelan-ds786/music-recommender-system/services/music-identity-gatekeeper/internal/auth"
+    "github.com/jeelan-ds786/music-recommender-system/services/music-identity-gatekeeper/internal/db"
+    "github.com/jeelan-ds786/music-recommender-system/services/music-identity-gatekeeper/internal/user"
 )
 
 func main() {
