@@ -4,13 +4,18 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewPostgresPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+func NewPostgresPool(ctx context.Context, dsn string, tracer pgx.QueryTracer) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
+	}
+
+	if tracer != nil {
+		config.ConnConfig.Tracer = tracer
 	}
 
 	config.MaxConns = 25
