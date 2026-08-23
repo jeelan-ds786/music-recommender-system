@@ -3,12 +3,15 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
 )
+
+const dummyPasswordHash = "$2a$12$D4G5f18o7aMMfwasBL7X6uJkHQdVyCzEOv.a8cF9Q8S1cS1Jyd9rq"
 
 type Service interface {
 	Register(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
@@ -17,8 +20,9 @@ type Service interface {
 }
 
 type AuthService struct {
-	userRepo      user.Repository
-	tokenService *token.Service
+	userRepo        user.Repository
+	tokenService    *token.Service
+	comparePassword func(string, string) error
 }
 
 func NewService(
@@ -26,8 +30,9 @@ func NewService(
 	tokenService *token.Service,
 ) Service {
 	return &AuthService{
-		userRepo:      userRepo,
-		tokenService: tokenService,
+		userRepo:        userRepo,
+		tokenService:    tokenService,
+		comparePassword: ComparePassword,
 	}
 }
 
@@ -35,6 +40,7 @@ func (s *AuthService) Register(
 	ctx context.Context,
 	req RegisterRequest,
 ) (*RegisterResponse, error) {
+	req.Email = normalizeEmail(req.Email)
 
 	existingUser, err := s.userRepo.GetByEmail(
 		ctx,
@@ -56,8 +62,8 @@ func (s *AuthService) Register(
 	}
 
 	newUser := &user.User{
-		ID:           uuid.New(),
-		Email:        req.Email,
+		ID:             uuid.New(),
+		Email:          req.Email,
 		HashedPassword: passwordHash,
 		AuthProvider:   "local",
 	}
@@ -82,22 +88,24 @@ func (s *AuthService) Login(
 	ctx context.Context,
 	req LoginRequest,
 ) (*token.TokenPair, error) {
+	req.Email = normalizeEmail(req.Email)
 
 	existingUser, err := s.userRepo.GetByEmail(
 		ctx,
 		req.Email,
 	)
 
-	if err != nil {
-		return nil, ErrInvalidCredentials
+	if err != nil && !errors.Is(err, user.ErrUserNotFound) {
+		return nil, err
 	}
 
-	err = ComparePassword(
-		existingUser.HashedPassword,
-		req.Password,
-	)
+	passwordHash := dummyPasswordHash
+	if err == nil && existingUser != nil {
+		passwordHash = existingUser.HashedPassword
+	}
 
-	if err != nil {
+	passwordErr := s.comparePassword(passwordHash, req.Password)
+	if passwordErr != nil || existingUser == nil {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -116,4 +124,8 @@ func (s *AuthService) Refresh(
 		ctx,
 		req.RefreshToken,
 	)
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
