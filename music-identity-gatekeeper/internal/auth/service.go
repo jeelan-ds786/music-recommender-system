@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
 )
@@ -28,11 +30,14 @@ type AuthService struct {
 func NewService(
 	userRepo user.Repository,
 	tokenService *token.Service,
+	log *logger.Logger,
 ) Service {
 	return &AuthService{
 		userRepo:        userRepo,
 		tokenService:    tokenService,
 		comparePassword: ComparePassword,
+    log:      log,
+    
 	}
 }
 
@@ -42,22 +47,34 @@ func (s *AuthService) Register(
 ) (*RegisterResponse, error) {
 	req.Email = normalizeEmail(req.Email)
 
+	rid, _ := reqid.FromContext(ctx)
+
+	s.log.Error("[%s] Starting registration for email=%s", rid, req.Email)
+
+	s.log.Debug("[%s] checking users table for email=%s", rid, req.Email)
+
 	existingUser, err := s.userRepo.GetByEmail(
 		ctx,
 		req.Email,
 	)
 
 	if err == nil && existingUser != nil {
+		s.log.Error("[%s] found existing user id=%s for email=%s", rid, existingUser.ID, req.Email)
+		s.log.Error("[%s] Ending registration for email=%s (rejected: already exists)", rid, req.Email)
 		return nil, ErrEmailAlreadyExists
 	}
 
 	if err != nil &&
 		!errors.Is(err, user.ErrUserNotFound) {
+		s.log.Error("[%s] Ending registration for email=%s (lookup error: %v)", rid, req.Email, err)
 		return nil, err
 	}
 
+	s.log.Debug("[%s] no data found for email=%s", rid, req.Email)
+
 	passwordHash, err := HashPassword(req.Password)
 	if err != nil {
+		s.log.Error("[%s] Ending registration for email=%s (hash error: %v)", rid, req.Email, err)
 		return nil, err
 	}
 
@@ -74,8 +91,12 @@ func (s *AuthService) Register(
 	)
 
 	if err != nil {
+		s.log.Error("[%s] Ending registration for email=%s (write error: %v)", rid, req.Email, err)
 		return nil, err
 	}
+
+	s.log.Info("[%s] write completed for user id=%s email=%s", rid, newUser.ID, req.Email)
+	s.log.Error("[%s] Ending registration for email=%s", rid, req.Email)
 
 	return &RegisterResponse{
 		ID:      newUser.ID,
