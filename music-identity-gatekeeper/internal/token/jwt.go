@@ -21,8 +21,8 @@ const AccessTokenTTL = 15 * time.Minute
 // JSON Web Tokens.
 //
 // It owns the secret used to:
-//   1. Sign access tokens
-//   2. Verify access-token signatures
+//  1. Sign access tokens
+//  2. Verify access-token signatures
 type JWTService struct {
 
 	// secret is the private signing key used by HS256.
