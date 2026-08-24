@@ -103,7 +103,10 @@ func (r *PostgresRepository) EnsureExists(
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	// A no-op after a successful Commit (returns pgx.ErrTxClosed, which is
+	// expected and safe to discard); on any early return it rolls back the
+	// half-applied inserts, which is the actual point of deferring it.
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	_, err = tx.Exec(
 		ctx,

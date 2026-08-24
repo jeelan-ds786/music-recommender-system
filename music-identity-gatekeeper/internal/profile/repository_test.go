@@ -72,8 +72,12 @@ func TestPostgresRepository_EnsureExists_CreatesRowsIdempotently(t *testing.T) {
 
 	repo := NewRepository(pool)
 	t.Cleanup(func() {
-		pool.Exec(ctx, "DELETE FROM listener_profiles WHERE user_id = $1", userID)
-		pool.Exec(ctx, "DELETE FROM preferences WHERE user_id = $1", userID)
+		if _, err := pool.Exec(ctx, "DELETE FROM listener_profiles WHERE user_id = $1", userID); err != nil {
+			t.Logf("cleanup: failed to delete listener_profiles row: %v", err)
+		}
+		if _, err := pool.Exec(ctx, "DELETE FROM preferences WHERE user_id = $1", userID); err != nil {
+			t.Logf("cleanup: failed to delete preferences row: %v", err)
+		}
 	})
 
 	if err := repo.EnsureExists(ctx, userID); err != nil {
@@ -84,8 +88,12 @@ func TestPostgresRepository_EnsureExists_CreatesRowsIdempotently(t *testing.T) {
 	}
 
 	var profileCount, prefCount int
-	pool.QueryRow(ctx, "SELECT count(*) FROM listener_profiles WHERE user_id = $1", userID).Scan(&profileCount)
-	pool.QueryRow(ctx, "SELECT count(*) FROM preferences WHERE user_id = $1", userID).Scan(&prefCount)
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM listener_profiles WHERE user_id = $1", userID).Scan(&profileCount); err != nil {
+		t.Fatalf("failed to count listener_profiles rows: %v", err)
+	}
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM preferences WHERE user_id = $1", userID).Scan(&prefCount); err != nil {
+		t.Fatalf("failed to count preferences rows: %v", err)
+	}
 
 	if profileCount != 1 {
 		t.Errorf("expected exactly 1 listener_profiles row, got %d", profileCount)
@@ -102,8 +110,12 @@ func TestPostgresRepository_EnsureExists_ConcurrentCallsAreSafe(t *testing.T) {
 
 	repo := NewRepository(pool)
 	t.Cleanup(func() {
-		pool.Exec(ctx, "DELETE FROM listener_profiles WHERE user_id = $1", userID)
-		pool.Exec(ctx, "DELETE FROM preferences WHERE user_id = $1", userID)
+		if _, err := pool.Exec(ctx, "DELETE FROM listener_profiles WHERE user_id = $1", userID); err != nil {
+			t.Logf("cleanup: failed to delete listener_profiles row: %v", err)
+		}
+		if _, err := pool.Exec(ctx, "DELETE FROM preferences WHERE user_id = $1", userID); err != nil {
+			t.Logf("cleanup: failed to delete preferences row: %v", err)
+		}
 	})
 
 	const n = 10
@@ -126,8 +138,12 @@ func TestPostgresRepository_EnsureExists_ConcurrentCallsAreSafe(t *testing.T) {
 	}
 
 	var profileCount, prefCount int
-	pool.QueryRow(ctx, "SELECT count(*) FROM listener_profiles WHERE user_id = $1", userID).Scan(&profileCount)
-	pool.QueryRow(ctx, "SELECT count(*) FROM preferences WHERE user_id = $1", userID).Scan(&prefCount)
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM listener_profiles WHERE user_id = $1", userID).Scan(&profileCount); err != nil {
+		t.Fatalf("failed to count listener_profiles rows: %v", err)
+	}
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM preferences WHERE user_id = $1", userID).Scan(&prefCount); err != nil {
+		t.Fatalf("failed to count preferences rows: %v", err)
+	}
 
 	if profileCount != 1 {
 		t.Errorf("expected exactly 1 listener_profiles row after concurrent EnsureExists, got %d", profileCount)
@@ -154,8 +170,12 @@ func TestPostgresRepository_Update_PartialPatchPreservesOmittedFields(t *testing
 
 	repo := NewRepository(pool)
 	t.Cleanup(func() {
-		pool.Exec(ctx, "DELETE FROM listener_profiles WHERE user_id = $1", userID)
-		pool.Exec(ctx, "DELETE FROM preferences WHERE user_id = $1", userID)
+		if _, err := pool.Exec(ctx, "DELETE FROM listener_profiles WHERE user_id = $1", userID); err != nil {
+			t.Logf("cleanup: failed to delete listener_profiles row: %v", err)
+		}
+		if _, err := pool.Exec(ctx, "DELETE FROM preferences WHERE user_id = $1", userID); err != nil {
+			t.Logf("cleanup: failed to delete preferences row: %v", err)
+		}
 	})
 
 	if err := repo.EnsureExists(ctx, userID); err != nil {

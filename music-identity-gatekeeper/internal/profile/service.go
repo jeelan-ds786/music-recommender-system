@@ -96,13 +96,7 @@ func (s *service) PatchMe(
 		return nil, err
 	}
 
-	p, err := s.profileRepo.Update(ctx, userID, PatchFields{
-		DisplayName: req.DisplayName,
-		AvatarURL:   req.AvatarURL,
-		Country:     req.Country,
-		Language:    req.Language,
-		BirthYear:   req.BirthYear,
-	})
+	p, err := s.profileRepo.Update(ctx, userID, PatchFields(req))
 	if err != nil {
 		s.log.Error(rid, "Ending PatchMe for user_id=%s (write failed: %v)", userID, err)
 		return nil, err
