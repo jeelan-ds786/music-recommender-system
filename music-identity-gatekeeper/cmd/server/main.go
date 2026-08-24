@@ -13,7 +13,10 @@ import (
 
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/auth"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/db"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/httplog"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/preference"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
@@ -34,7 +37,7 @@ func main() {
 	}
 
 	appLogger := logger.New(logger.ParseLevel(os.Getenv("LOG_LEVEL")))
-	appLogger.Info("connecting to postgres at %s", maskDSN(dsn))
+	appLogger.Info("", "connecting to postgres at %s", maskDSN(dsn))
 
 	pool, err := db.NewPostgresPool(ctx, dsn, db.NewQueryTracer(appLogger))
 	if err != nil {
@@ -50,8 +53,14 @@ func main() {
 
 	authHandler := auth.NewHandler(authService)
 
+	preferenceRepo := preference.NewRepository(pool)
+	profileRepo := profile.NewRepository(pool)
+	profileService := profile.NewService(profileRepo, preferenceRepo, userRepo, appLogger)
+	profileHandler := profile.NewHandler(profileService, appLogger)
+
 	r := chi.NewRouter()
 	r.Use(reqid.Middleware)
+	r.Use(httplog.Middleware(appLogger))
 
 	r.Route("/auth", func(r chi.Router) {
 		r.Post("/register", authHandler.Register)
@@ -59,7 +68,8 @@ func main() {
 		r.Post("/refresh", authHandler.Refresh)
 	})
 
-	r.With(auth.AuthMiddleware(jwtService)).Get("/me", authHandler.Me)
+	r.With(auth.AuthMiddleware(jwtService)).Get("/me", profileHandler.Me)
+	r.With(auth.AuthMiddleware(jwtService)).Patch("/me", profileHandler.PatchMe)
 
 	log.Println("server listening on :8080")
 

@@ -35,5 +35,5 @@ dev:
 	go run ./cmd/server
 
 test:
-	go test ./internal/preference/... -v
+	go test ./internal/preference/... ./internal/profile/... -v
 
