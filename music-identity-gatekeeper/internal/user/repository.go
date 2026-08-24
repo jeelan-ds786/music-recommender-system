@@ -9,27 +9,27 @@ import (
 )
 
 type Repository interface {
-CreateUser(ctx context.Context, user *User) error
-GetByEmail(ctx context.Context, email string) (*User, error)
-GetByID(ctx context.Context, id uuid.UUID) (*User, error)
+	CreateUser(ctx context.Context, user *User) error
+	GetByEmail(ctx context.Context, email string) (*User, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
 }
 
 type PostgresRepository struct {
-db *pgxpool.Pool
+	db *pgxpool.Pool
 }
 
 func NewRepository(db *pgxpool.Pool) Repository {
-return &PostgresRepository{
-db: db,
-}
+	return &PostgresRepository{
+		db: db,
+	}
 }
 
 func (r *PostgresRepository) CreateUser(
-ctx context.Context,
-user *User,
+	ctx context.Context,
+	user *User,
 ) error {
 
-query := `
+	query := `
 	INSERT INTO users (
 		id,
 		email,
@@ -39,26 +39,25 @@ query := `
 	VALUES ($1, $2, $3, $4)
 `
 
-_, err := r.db.Exec(
-	ctx,
-	query,
-	user.ID,
-	user.Email,
-	user.HashedPassword,
-	user.AuthProvider,
-)
+	_, err := r.db.Exec(
+		ctx,
+		query,
+		user.ID,
+		user.Email,
+		user.HashedPassword,
+		user.AuthProvider,
+	)
 
-return err
-
+	return err
 
 }
 
 func (r *PostgresRepository) GetByEmail(
-ctx context.Context,
-email string,
+	ctx context.Context,
+	email string,
 ) (*User, error) {
 
-query := `
+	query := `
 	SELECT
 		id,
 		email,
@@ -70,40 +69,39 @@ query := `
 	WHERE email = $1
 `
 
-var user User
+	var user User
 
-err := r.db.QueryRow(
-	ctx,
-	query,
-	email,
-).Scan(
-	&user.ID,
-	&user.Email,
-	&user.HashedPassword,
-	&user.AuthProvider,
-	&user.CreatedAt,
-	&user.UpdatedAt,
-)
+	err := r.db.QueryRow(
+		ctx,
+		query,
+		email,
+	).Scan(
+		&user.ID,
+		&user.Email,
+		&user.HashedPassword,
+		&user.AuthProvider,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
 
-if err != nil {
-	if err == pgx.ErrNoRows {
-		return nil, ErrUserNotFound
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrUserNotFound
+		}
+
+		return nil, err
 	}
 
-	return nil, err
-}
-
-return &user, nil
-
+	return &user, nil
 
 }
 
 func (r *PostgresRepository) GetByID(
-ctx context.Context,
-id uuid.UUID,
+	ctx context.Context,
+	id uuid.UUID,
 ) (*User, error) {
 
-query := `
+	query := `
 	SELECT
 		id,
 		email,
@@ -115,29 +113,29 @@ query := `
 	WHERE id = $1
 `
 
-var user User
+	var user User
 
-err := r.db.QueryRow(
-	ctx,
-	query,
-	id,
-).Scan(
-	&user.ID,
-	&user.Email,
-	&user.HashedPassword,
-	&user.AuthProvider,
-	&user.CreatedAt,
-	&user.UpdatedAt,
-)
+	err := r.db.QueryRow(
+		ctx,
+		query,
+		id,
+	).Scan(
+		&user.ID,
+		&user.Email,
+		&user.HashedPassword,
+		&user.AuthProvider,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
 
-if err != nil {
-	if err == pgx.ErrNoRows {
-		return nil, ErrUserNotFound
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrUserNotFound
+		}
+
+		return nil, err
 	}
 
-	return nil, err
-}
-
-return &user, nil
+	return &user, nil
 
 }

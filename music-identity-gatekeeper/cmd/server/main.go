@@ -17,7 +17,7 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
-    "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
 )
 
 func main() {
