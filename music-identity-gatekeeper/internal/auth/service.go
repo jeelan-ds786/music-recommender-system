@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
 )
 
+const dummyPasswordHash = "$2a$12$D4G5f18o7aMMfwasBL7X6uJkHQdVyCzEOv.a8cF9Q8S1cS1Jyd9rq"
+
 type Service interface {
 	Register(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
 	Login(ctx context.Context, req LoginRequest) (*token.TokenPair, error)
@@ -19,9 +22,10 @@ type Service interface {
 }
 
 type AuthService struct {
-	userRepo     user.Repository
-	tokenService *token.Service
-	log          *logger.Logger
+	userRepo        user.Repository
+	tokenService    *token.Service
+	comparePassword func(string, string) error
+	log             *logger.Logger
 }
 
 func NewService(
@@ -30,9 +34,10 @@ func NewService(
 	log *logger.Logger,
 ) Service {
 	return &AuthService{
-		userRepo:     userRepo,
-		tokenService: tokenService,
-		log:          log,
+		userRepo:        userRepo,
+		tokenService:    tokenService,
+		comparePassword: ComparePassword,
+		log:             log,
 	}
 }
 
@@ -40,6 +45,7 @@ func (s *AuthService) Register(
 	ctx context.Context,
 	req RegisterRequest,
 ) (*RegisterResponse, error) {
+	req.Email = normalizeEmail(req.Email)
 
 	rid, _ := reqid.FromContext(ctx)
 
@@ -103,22 +109,24 @@ func (s *AuthService) Login(
 	ctx context.Context,
 	req LoginRequest,
 ) (*token.TokenPair, error) {
+	req.Email = normalizeEmail(req.Email)
 
 	existingUser, err := s.userRepo.GetByEmail(
 		ctx,
 		req.Email,
 	)
 
-	if err != nil {
-		return nil, ErrInvalidCredentials
+	if err != nil && !errors.Is(err, user.ErrUserNotFound) {
+		return nil, err
 	}
 
-	err = ComparePassword(
-		existingUser.HashedPassword,
-		req.Password,
-	)
+	passwordHash := dummyPasswordHash
+	if err == nil && existingUser != nil {
+		passwordHash = existingUser.HashedPassword
+	}
 
-	if err != nil {
+	passwordErr := s.comparePassword(passwordHash, req.Password)
+	if passwordErr != nil || existingUser == nil {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -137,4 +145,8 @@ func (s *AuthService) Refresh(
 		ctx,
 		req.RefreshToken,
 	)
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
