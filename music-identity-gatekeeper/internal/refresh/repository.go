@@ -345,7 +345,9 @@ func (r *Repository) Rotate(
 	//
 	// After a successful Commit(), Rollback() simply has
 	// nothing left to roll back.
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	// ---------------------------------------------------------
 	// STEP 1: Revoke the old refresh token

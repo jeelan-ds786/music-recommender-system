@@ -12,10 +12,10 @@ type LoginRequest struct {
 	Password string `json:"password" validate:"required"`
 }
 
-type RegisterResponse struct { 
-	ID    uuid.UUID `json:"id"`
-	Email string    `json:"email"`
-	Tier  string    `json:"tier"`
+type RegisterResponse struct {
+	ID      uuid.UUID `json:"id"`
+	Email   string    `json:"email"`
+	Tier    string    `json:"tier"`
 	Message string    `json:"message"`
 }
 

@@ -76,9 +76,9 @@ type TokenPair struct {
 //
 // This gives us:
 //
-//	1. Loose coupling
-//	2. Easier unit testing
-//	3. Ability to replace the repository later
+//  1. Loose coupling
+//  2. Easier unit testing
+//  3. Ability to replace the repository later
 //
 // The refresh.Repository we created earlier satisfies
 // this interface automatically because it implements these

@@ -17,7 +17,7 @@ type Service interface {
 }
 
 type AuthService struct {
-	userRepo      user.Repository
+	userRepo     user.Repository
 	tokenService *token.Service
 }
 
@@ -26,7 +26,7 @@ func NewService(
 	tokenService *token.Service,
 ) Service {
 	return &AuthService{
-		userRepo:      userRepo,
+		userRepo:     userRepo,
 		tokenService: tokenService,
 	}
 }
@@ -56,8 +56,8 @@ func (s *AuthService) Register(
 	}
 
 	newUser := &user.User{
-		ID:           uuid.New(),
-		Email:        req.Email,
+		ID:             uuid.New(),
+		Email:          req.Email,
 		HashedPassword: passwordHash,
 		AuthProvider:   "local",
 	}

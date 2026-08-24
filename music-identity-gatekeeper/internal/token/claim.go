@@ -7,12 +7,11 @@ import (
 )
 
 type Claims struct {
-	UserID      string `json:"user_id"`
-	Provider    string `json:"auth_provider"`
+	UserID   string `json:"user_id"`
+	Provider string `json:"auth_provider"`
 
 	jwt.RegisteredClaims
 }
-
 
 // NewAccessTokenClaims creates the claims that will be placed
 // inside a new access token.

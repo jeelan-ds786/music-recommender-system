@@ -13,8 +13,8 @@ type Config struct {
 
 func LoadConfig() (Config, error) {
 	viper.SetConfigFile(".env")
-	viper.AutomaticEnv() 
-	_ = viper.ReadInConfig() 
+	viper.AutomaticEnv()
+	_ = viper.ReadInConfig()
 
 	var cfg Config
 	err := viper.Unmarshal(&cfg)
