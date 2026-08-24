@@ -15,10 +15,12 @@ import (
 // Example:
 //
 // Raw token:
-//   "a8f91c...."
+//
+//	"a8f91c...."
 //
 // Database:
-//   SHA256("a8f91c....") → "7d4e..."
+//
+//	SHA256("a8f91c....") → "7d4e..."
 //
 // If the database is compromised, the attacker cannot directly
 // use the stored hash as the refresh token.
