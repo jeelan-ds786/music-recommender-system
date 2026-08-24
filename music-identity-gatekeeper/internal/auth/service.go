@@ -25,6 +25,7 @@ type AuthService struct {
 	userRepo        user.Repository
 	tokenService    *token.Service
 	comparePassword func(string, string) error
+	log             *logger.Logger
 }
 
 func NewService(
@@ -36,8 +37,7 @@ func NewService(
 		userRepo:        userRepo,
 		tokenService:    tokenService,
 		comparePassword: ComparePassword,
-    log:      log,
-    
+		log:             log,
 	}
 }
 
