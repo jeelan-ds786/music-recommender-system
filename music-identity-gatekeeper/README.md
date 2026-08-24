@@ -155,3 +155,8 @@ During setup, the following technical hurdles were resolved:
 ---
 
 **You now have a production-ready template.** Would you like to move on to implementing the **Database Connection Layer** using `sqlx` or `gorm` to verify the Postgres integration?
+## Subscription tier authorization
+
+Access tokens contain the listener's persisted `tier` claim. Premium routes authorize only this signed claim; tier values supplied through headers or request bodies are ignored.
+
+After a subscription upgrade, the profile service returns a newly issued token pair containing the updated tier. Existing access tokens remain valid with their old tier claim until they expire, are refreshed, or are explicitly reissued.

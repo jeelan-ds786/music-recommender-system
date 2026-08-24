@@ -61,7 +61,7 @@ func NewJWTService(secret string) *JWTService {
 // Input:
 //
 //	userID
-//	authProvider
+//	tier
 //
 // Output:
 //
@@ -78,7 +78,7 @@ func NewJWTService(secret string) *JWTService {
 //	Signed JWT
 func (s *JWTService) GenerateAccessToken(
 	userID string,
-	authProvider string,
+	tier string,
 ) (string, error) {
 
 	// Capture the current time.
@@ -94,7 +94,7 @@ func (s *JWTService) GenerateAccessToken(
 	//
 	// {
 	//   "user_id": "...",
-	//   "auth_provider": "local",
+	//   "tier": "free",
 	//   "iat": "...",
 	//   "exp": "..."
 	// }
@@ -109,7 +109,7 @@ func (s *JWTService) GenerateAccessToken(
 		// "local"
 		// "google"
 		// "github"
-		Provider: authProvider,
+		Tier: tier,
 
 		// RegisteredClaims contains standard JWT claims.
 		RegisteredClaims: jwt.RegisteredClaims{

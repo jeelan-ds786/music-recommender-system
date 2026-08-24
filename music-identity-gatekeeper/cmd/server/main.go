@@ -12,6 +12,7 @@ import (
 
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/auth"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/db"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
@@ -37,8 +38,10 @@ func main() {
 
 	userRepo := user.NewRepository(pool)
 	refreshRepo := refresh.NewRepository(pool)
+	profileRepo := profile.NewRepository(pool)
 	jwtService := token.NewJWTService(jwtSecret)
-	tokenService := token.NewService(jwtService, refreshRepo)
+	tokenService := token.NewService(jwtService, refreshRepo, profileRepo)
+	_ = profile.NewService(profileRepo, tokenService)
 
 	authService := auth.NewService(userRepo, tokenService)
 

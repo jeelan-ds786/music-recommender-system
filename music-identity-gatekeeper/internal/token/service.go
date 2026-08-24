@@ -112,6 +112,10 @@ type RefreshRepository interface {
 	) error
 }
 
+type TierProvider interface {
+	GetTier(ctx context.Context, userID uuid.UUID) (string, error)
+}
+
 // Service is the central authentication token service.
 //
 // It coordinates:
@@ -135,7 +139,8 @@ type Service struct {
 
 	// refreshRepo is responsible for storing and retrieving
 	// refresh-token records from PostgreSQL.
-	refreshRepo RefreshRepository
+	refreshRepo  RefreshRepository
+	tierProvider TierProvider
 }
 
 // NewService creates the central token service.
@@ -150,12 +155,14 @@ type Service struct {
 func NewService(
 	jwtService *JWTService,
 	refreshRepo RefreshRepository,
+	tierProvider TierProvider,
 ) *Service {
 
 	// Return a new token service containing both dependencies.
 	return &Service{
-		jwtService:  jwtService,
-		refreshRepo: refreshRepo,
+		jwtService:   jwtService,
+		refreshRepo:  refreshRepo,
+		tierProvider: tierProvider,
 	}
 }
 
@@ -185,8 +192,11 @@ func NewService(
 func (s *Service) IssueTokenPair(
 	ctx context.Context,
 	userID uuid.UUID,
-	authProvider string,
 ) (*TokenPair, error) {
+	tier, err := s.tierProvider.GetTier(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get tier: %w", err)
+	}
 
 	// ---------------------------------------------------------
 	// STEP 1: Generate the access token
@@ -200,7 +210,7 @@ func (s *Service) IssueTokenPair(
 	// - signing using HS256
 	accessToken, err := s.jwtService.GenerateAccessToken(
 		userID.String(),
-		authProvider,
+		tier,
 	)
 
 	// If access-token generation fails, we stop immediately.
@@ -486,33 +496,17 @@ func (s *Service) RefreshAccessToken(
 	// STEP 5: Generate a NEW access token
 	// ---------------------------------------------------------
 
-	// We need the user's authentication provider.
-	//
-	// The refresh_tokens table currently stores:
-	//
-	//	token_hash
-	//	user_id
-	//	expires_at
-	//	revoked
-	//	created_at
-	//
-	// It does NOT store auth_provider.
-	//
-	// Therefore, we cannot get authProvider directly from
-	// the refresh-token row.
-	//
-	// For now we use "local" here only if your application
-	// supports local authentication exclusively.
-	//
-	// IMPORTANT:
-	// If you support Google/GitHub/etc., we should load the
-	// user from the users table and obtain AuthProvider there.
-	authProvider := "local"
+	// Refresh reads the current persisted tier so a newly issued access token
+	// reflects upgrades made after the previous access token was signed.
+	tier, err := s.tierProvider.GetTier(ctx, storedToken.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("get tier: %w", err)
+	}
 
 	// Generate a new short-lived access token.
 	accessToken, err := s.jwtService.GenerateAccessToken(
 		storedToken.UserID.String(),
-		authProvider,
+		tier,
 	)
 
 	// Stop if access-token generation failed.
