@@ -70,11 +70,7 @@ func (s *service) Onboard(
 
 	s.log.Debug(rid, "Starting Onboard for user_id=%s", userID)
 
-	err := s.repo.CompleteOnboarding(ctx, userID, OnboardingFields{
-		GenreSeeds:        req.GenreSeeds,
-		LanguagePrefs:     req.LanguagePrefs,
-		FollowedArtistIDs: req.FollowedArtistIDs,
-	})
+	err := s.repo.CompleteOnboarding(ctx, userID, OnboardingFields(req))
 	if err != nil {
 		s.log.Error(rid, "Ending Onboard for user_id=%s (failed: %v)", userID, err)
 		return err
