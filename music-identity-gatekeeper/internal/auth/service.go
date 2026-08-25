@@ -49,9 +49,9 @@ func (s *AuthService) Register(
 
 	rid, _ := reqid.FromContext(ctx)
 
-	s.log.Error("[%s] Starting registration for email=%s", rid, req.Email)
+	s.log.Debug(rid, "Starting registration for email=%s", req.Email)
 
-	s.log.Debug("[%s] checking users table for email=%s", rid, req.Email)
+	s.log.Debug(rid, "checking users table for email=%s", req.Email)
 
 	existingUser, err := s.userRepo.GetByEmail(
 		ctx,
@@ -59,22 +59,22 @@ func (s *AuthService) Register(
 	)
 
 	if err == nil && existingUser != nil {
-		s.log.Error("[%s] found existing user id=%s for email=%s", rid, existingUser.ID, req.Email)
-		s.log.Error("[%s] Ending registration for email=%s (rejected: already exists)", rid, req.Email)
+		s.log.Info(rid, "found existing user id=%s for email=%s", existingUser.ID, req.Email)
+		s.log.Info(rid, "Ending registration for email=%s (rejected: already exists)", req.Email)
 		return nil, ErrEmailAlreadyExists
 	}
 
 	if err != nil &&
 		!errors.Is(err, user.ErrUserNotFound) {
-		s.log.Error("[%s] Ending registration for email=%s (lookup error: %v)", rid, req.Email, err)
+		s.log.Error(rid, "Ending registration for email=%s (lookup error: %v)", req.Email, err)
 		return nil, err
 	}
 
-	s.log.Debug("[%s] no data found for email=%s", rid, req.Email)
+	s.log.Debug(rid, "no data found for email=%s", req.Email)
 
 	passwordHash, err := HashPassword(req.Password)
 	if err != nil {
-		s.log.Error("[%s] Ending registration for email=%s (hash error: %v)", rid, req.Email, err)
+		s.log.Error(rid, "Ending registration for email=%s (hash error: %v)", req.Email, err)
 		return nil, err
 	}
 
@@ -91,12 +91,12 @@ func (s *AuthService) Register(
 	)
 
 	if err != nil {
-		s.log.Error("[%s] Ending registration for email=%s (write error: %v)", rid, req.Email, err)
+		s.log.Error(rid, "Ending registration for email=%s (write error: %v)", req.Email, err)
 		return nil, err
 	}
 
-	s.log.Info("[%s] write completed for user id=%s email=%s", rid, newUser.ID, req.Email)
-	s.log.Error("[%s] Ending registration for email=%s", rid, req.Email)
+	s.log.Info(rid, "write completed for user id=%s email=%s", newUser.ID, req.Email)
+	s.log.Debug(rid, "Ending registration for email=%s", req.Email)
 
 	return &RegisterResponse{
 		ID:      newUser.ID,

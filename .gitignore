@@ -1,4 +1,6 @@
 venv/
+# --- Claude Code local tooling ---
+.claude/
 # --- Environment Files ---
 # NEVER commit your secrets.
 .env

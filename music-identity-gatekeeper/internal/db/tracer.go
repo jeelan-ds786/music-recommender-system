@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 )
 
 type queryTracer struct {
@@ -55,15 +56,16 @@ func (t *queryTracer) TraceQueryEnd(
 		return
 	}
 
+	rid, _ := reqid.FromContext(ctx)
 	elapsed := time.Since(td.start)
 	args := formatArgs(td.args)
 
 	if data.Err != nil {
-		t.log.Error("postgres %s failed in %s | args=%s | %s | err=%v", td.op, elapsed, args, td.sql, data.Err)
+		t.log.Error(rid, "postgres %s failed in %s | args=%s | %s | err=%v", td.op, elapsed, args, td.sql, data.Err)
 		return
 	}
 
-	t.log.Info("postgres %s %s in %s | args=%s | %s", td.op, data.CommandTag.String(), elapsed, args, td.sql)
+	t.log.Info(rid, "postgres %s %s in %s | args=%s | %s", td.op, data.CommandTag.String(), elapsed, args, td.sql)
 }
 
 func formatArgs(args []any) string {
