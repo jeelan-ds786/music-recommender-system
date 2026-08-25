@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
 )
 
@@ -75,7 +76,7 @@ func (r *memoryRefreshRepository) Rotate(
 func TestRefreshTokenRotationRejectsReuse(t *testing.T) {
 	ctx := context.Background()
 	repository := newMemoryRefreshRepository()
-	service := NewService(NewJWTService("test-secret"), repository, staticTierProvider{tier: "free"})
+	service := NewService(NewJWTService("test-secret"), repository, staticTierProvider{tier: "free"}, logger.New(logger.LevelNone))
 	initialPair, err := service.IssueTokenPair(ctx, uuid.New())
 	if err != nil {
 		t.Fatalf("issue initial token pair: %v", err)

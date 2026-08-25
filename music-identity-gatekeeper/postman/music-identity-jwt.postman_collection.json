@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "a1d0db65-46d7-4f57-a6d6-2d2ab7b2e321",
-    "name": "Music Identity JWT Flow",
+    "name": "Music Identity Gatekeeper API",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -502,6 +502,767 @@
           }
         }
       ]
+    },
+    {
+      "name": "12. Onboarding (First Submission)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"genre_seeds\": [\"pop\", \"rock\"],\n  \"language_prefs\": [\"en\"]\n}"
+        },
+        "url": {
+          "raw": "{{migUrl}}/me/onboarding",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "onboarding"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('First onboarding submission succeeds', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "",
+              "pm.test('Response confirms onboarded status', function () {",
+              "    pm.expect(data.status).to.eql('onboarded');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "13. Onboarding (Second Submission - Should Fail)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"genre_seeds\": [\"pop\"],\n  \"language_prefs\": [\"en\"]\n}"
+        },
+        "url": {
+          "raw": "{{migUrl}}/me/onboarding",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "onboarding"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Resubmitting onboarding is rejected with 409', function () {",
+              "    pm.response.to.have.status(409);",
+              "});",
+              "",
+              "var data = {};",
+              "try { data = pm.response.json(); } catch (e) {}",
+              "",
+              "pm.test('Error identifies already-completed onboarding', function () {",
+              "    pm.expect(data.error).to.eql('ONBOARDING_ALREADY_COMPLETED');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "14. Like Song",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/likes/songs/{{likedSongId}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "likes",
+            "songs",
+            "{{likedSongId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.collectionVariables.get('likedSongId')) {",
+              "    pm.collectionVariables.set('likedSongId', pm.variables.replaceIn('{{$guid}}'));",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Liking a song succeeds', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "",
+              "pm.test('Response confirms liked status', function () {",
+              "    pm.expect(data.status).to.eql('liked');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "15. Like Song Again (Idempotent Retry)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/likes/songs/{{likedSongId}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "likes",
+            "songs",
+            "{{likedSongId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Liking the same song again is still a 200 (idempotent, not a duplicate)', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "16. Like Second Song (For Pagination)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/likes/songs/{{secondLikedSongId}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "likes",
+            "songs",
+            "{{secondLikedSongId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.collectionVariables.get('secondLikedSongId')) {",
+              "    pm.collectionVariables.set('secondLikedSongId', pm.variables.replaceIn('{{$guid}}'));",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Liking a second song succeeds', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "17. List Liked Songs (Paginated, Limit 1)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/likes/songs?limit=1",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "likes",
+            "songs"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "1"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Listing liked songs succeeds', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "",
+              "pm.test('Page has exactly one item and a next_cursor (a second song is still liked)', function () {",
+              "    pm.expect(data.items).to.be.an('array').with.lengthOf(1);",
+              "    pm.expect(data.next_cursor).to.be.a('string').and.not.empty;",
+              "});",
+              "",
+              "if (data.next_cursor) pm.collectionVariables.set('likesCursor', data.next_cursor);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "18. List Liked Songs - Next Page (Uses Cursor)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/likes/songs?limit=1&cursor={{likesCursor}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "likes",
+            "songs"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "1"
+            },
+            {
+              "key": "cursor",
+              "value": "{{likesCursor}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Fetching the next page with the cursor succeeds', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "",
+              "pm.test('Second page has the remaining item and no further cursor', function () {",
+              "    pm.expect(data.items).to.be.an('array').with.lengthOf(1);",
+              "    pm.expect(data.next_cursor).to.be.null;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "19. Like Song - Invalid UUID (Should Fail)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/likes/songs/not-a-uuid",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "likes",
+            "songs",
+            "not-a-uuid"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Invalid song id is rejected with structured 400', function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "",
+              "var data = {};",
+              "try { data = pm.response.json(); } catch (e) {}",
+              "",
+              "pm.test('Error identifies invalid song id', function () {",
+              "    pm.expect(data.error).to.eql('INVALID_SONG_ID');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "20. Unlike Song",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/likes/songs/{{likedSongId}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "likes",
+            "songs",
+            "{{likedSongId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Unliking a liked song succeeds', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "",
+              "pm.test('Response confirms unliked status', function () {",
+              "    pm.expect(data.status).to.eql('unliked');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "21. Unlike Song Again (Should Fail)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/likes/songs/{{likedSongId}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "likes",
+            "songs",
+            "{{likedSongId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Unliking an already-unliked song returns structured 404', function () {",
+              "    pm.response.to.have.status(404);",
+              "});",
+              "",
+              "var data = {};",
+              "try { data = pm.response.json(); } catch (e) {}",
+              "",
+              "pm.test('Error identifies missing like', function () {",
+              "    pm.expect(data.error).to.eql('LIKE_NOT_FOUND');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "22. Follow Artist",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/following/artists/{{followedArtistId}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "following",
+            "artists",
+            "{{followedArtistId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.collectionVariables.get('followedArtistId')) {",
+              "    pm.collectionVariables.set('followedArtistId', pm.variables.replaceIn('{{$guid}}'));",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Following an artist succeeds', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "",
+              "pm.test('Response confirms followed status', function () {",
+              "    pm.expect(data.status).to.eql('followed');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "23. Follow Artist Again (Idempotent Retry)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/following/artists/{{followedArtistId}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "following",
+            "artists",
+            "{{followedArtistId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Following the same artist again is still a 200 (idempotent, not a duplicate)', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "24. Follow Artist - Invalid UUID (Should Fail)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/following/artists/not-a-uuid",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "following",
+            "artists",
+            "not-a-uuid"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Invalid artist id is rejected with structured 400', function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "",
+              "var data = {};",
+              "try { data = pm.response.json(); } catch (e) {}",
+              "",
+              "pm.test('Error identifies invalid artist id', function () {",
+              "    pm.expect(data.error).to.eql('INVALID_ARTIST_ID');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "25. Unfollow Artist",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/following/artists/{{followedArtistId}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "following",
+            "artists",
+            "{{followedArtistId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Unfollowing a followed artist succeeds', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "",
+              "pm.test('Response confirms unfollowed status', function () {",
+              "    pm.expect(data.status).to.eql('unfollowed');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "26. Unfollow Artist Again (Should Fail)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me/following/artists/{{followedArtistId}}",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me",
+            "following",
+            "artists",
+            "{{followedArtistId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Unfollowing an already-unfollowed artist returns structured 404', function () {",
+              "    pm.response.to.have.status(404);",
+              "});",
+              "",
+              "var data = {};",
+              "try { data = pm.response.json(); } catch (e) {}",
+              "",
+              "pm.test('Error identifies missing follow', function () {",
+              "    pm.expect(data.error).to.eql('FOLLOW_NOT_FOUND');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "27. Me - Verify Preferences Reflect Mutations",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{migUrl}}/me",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Me status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "var prefs = data.preferences || {};",
+              "",
+              "pm.test('Onboarding genre seeds are present', function () {",
+              "    pm.expect(prefs.genre_seeds).to.include.members(['pop', 'rock']);",
+              "});",
+              "",
+              "pm.test('liked_song_ids reflects the unlike (first song gone, second song still liked)', function () {",
+              "    pm.expect(prefs.liked_song_ids).to.not.include(pm.collectionVariables.get('likedSongId'));",
+              "    pm.expect(prefs.liked_song_ids).to.include(pm.collectionVariables.get('secondLikedSongId'));",
+              "});",
+              "",
+              "pm.test('followed_artist_ids reflects the unfollow', function () {",
+              "    pm.expect(prefs.followed_artist_ids).to.not.include(pm.collectionVariables.get('followedArtistId'));",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -528,6 +1289,26 @@
     {
       "key": "oldRefreshToken",
       "value": ""
+    },
+    {
+      "key": "likedSongId",
+      "value": "",
+      "description": "Song UUID used for the like/unlike flow (12-16, 20-21); auto-generated on first use."
+    },
+    {
+      "key": "secondLikedSongId",
+      "value": "",
+      "description": "A second liked song UUID, kept liked throughout, so pagination (17-18) has something to page across."
+    },
+    {
+      "key": "followedArtistId",
+      "value": "",
+      "description": "Artist UUID used for the follow/unfollow flow (22-26); auto-generated on first use."
+    },
+    {
+      "key": "likesCursor",
+      "value": "",
+      "description": "Opaque next_cursor captured from the paginated liked-songs list (17), consumed by the next-page request (18)."
     }
   ]
 }

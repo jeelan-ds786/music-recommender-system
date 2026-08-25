@@ -14,3 +14,13 @@ type Preference struct {
 	LanguagePrefs     []string
 	UpdatedAt         time.Time
 }
+
+type LikedSong struct {
+	SongID    uuid.UUID
+	CreatedAt time.Time
+}
+
+type FollowedArtist struct {
+	ArtistID  uuid.UUID
+	CreatedAt time.Time
+}

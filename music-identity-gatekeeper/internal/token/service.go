@@ -11,9 +11,11 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	// We import the refresh package because the token service
 	// needs to create and rotate refresh-token database records.
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 )
 
 // RefreshTokenTTL defines how long a refresh token remains valid.
@@ -141,6 +143,11 @@ type Service struct {
 	// refresh-token records from PostgreSQL.
 	refreshRepo  RefreshRepository
 	tierProvider TierProvider
+
+	// log records session-validation activity (refresh-token lookups,
+	// rotation outcomes) at Debug/Info/Error, same convention used
+	// throughout the rest of the service layer.
+	log *logger.Logger
 }
 
 // NewService creates the central token service.
@@ -156,13 +163,15 @@ func NewService(
 	jwtService *JWTService,
 	refreshRepo RefreshRepository,
 	tierProvider TierProvider,
+	log *logger.Logger,
 ) *Service {
 
-	// Return a new token service containing both dependencies.
+	// Return a new token service containing all four dependencies.
 	return &Service{
 		jwtService:   jwtService,
 		refreshRepo:  refreshRepo,
 		tierProvider: tierProvider,
+		log:          log,
 	}
 }
 
@@ -435,8 +444,13 @@ func (s *Service) RefreshAccessToken(
 	rawRefreshToken string,
 ) (*TokenPair, error) {
 
+	rid, _ := reqid.FromContext(ctx)
+
+	s.log.Debug(rid, "Starting RefreshAccessToken (validating session)")
+
 	// A refresh token cannot be empty.
 	if rawRefreshToken == "" {
+		s.log.Error(rid, "Ending RefreshAccessToken (invalid session: refresh token is required)")
 		return nil, errors.New("refresh token is required")
 	}
 
@@ -454,6 +468,8 @@ func (s *Service) RefreshAccessToken(
 	// STEP 2: Find the token in PostgreSQL
 	// ---------------------------------------------------------
 
+	s.log.Debug(rid, "reading refresh token from table")
+
 	// Look up the token using its SHA-256 hash.
 	storedToken, err := s.refreshRepo.GetByHash(
 		ctx,
@@ -462,6 +478,7 @@ func (s *Service) RefreshAccessToken(
 
 	// If the token does not exist, reject it.
 	if err != nil {
+		s.log.Error(rid, "Ending RefreshAccessToken (invalid session: refresh token not found: %v)", err)
 		return nil, errors.New("invalid refresh token")
 	}
 
@@ -479,6 +496,7 @@ func (s *Service) RefreshAccessToken(
 	//
 	// another request using that old token must fail.
 	if storedToken.Revoked {
+		s.log.Error(rid, "Ending RefreshAccessToken (invalid session: refresh token already revoked, user_id=%s)", storedToken.UserID)
 		return nil, errors.New("refresh token has been revoked")
 	}
 
@@ -489,8 +507,11 @@ func (s *Service) RefreshAccessToken(
 	// If the current time is after ExpiresAt,
 	// the refresh token is no longer valid.
 	if time.Now().After(storedToken.ExpiresAt) {
+		s.log.Error(rid, "Ending RefreshAccessToken (invalid session: refresh token expired, user_id=%s)", storedToken.UserID)
 		return nil, errors.New("refresh token has expired")
 	}
+
+	s.log.Debug(rid, "refresh token passed revoked/expiry checks for user_id=%s", storedToken.UserID)
 
 	// ---------------------------------------------------------
 	// STEP 5: Generate a NEW access token
@@ -583,11 +604,14 @@ func (s *Service) RefreshAccessToken(
 
 	// If rotation failed, do not return the new token.
 	if err != nil {
+		s.log.Error(rid, "Ending RefreshAccessToken (rotation failed for user_id=%s: %v)", storedToken.UserID, err)
 		return nil, fmt.Errorf(
 			"rotate refresh token: %w",
 			err,
 		)
 	}
+
+	s.log.Info(rid, "Ending RefreshAccessToken (valid session, refresh token rotated for user_id=%s)", storedToken.UserID)
 
 	// ---------------------------------------------------------
 	// STEP 8: Return the new token pair
