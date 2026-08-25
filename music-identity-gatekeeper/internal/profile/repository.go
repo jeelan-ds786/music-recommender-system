@@ -24,7 +24,7 @@ type PatchFields struct {
 	BirthYear   *int16
 }
 
-type Repository interface {
+type ProfileRepository interface {
 	GetByUserID(ctx context.Context, userID uuid.UUID) (*Profile, error)
 	// EnsureExists lazily creates the listener_profiles and preferences rows
 	// for userID if they don't already exist. Both inserts run in one
@@ -35,14 +35,49 @@ type Repository interface {
 	Update(ctx context.Context, userID uuid.UUID, patch PatchFields) (*Profile, error)
 }
 
+type TierRepository interface {
+	GetTier(ctx context.Context, userID uuid.UUID) (string, error)
+	Upgrade(ctx context.Context, userID uuid.UUID, tier string) error
+}
+
 type PostgresRepository struct {
 	db *pgxpool.Pool
 }
 
-func NewRepository(db *pgxpool.Pool) Repository {
-	return &PostgresRepository{
-		db: db,
+func NewRepository(db *pgxpool.Pool) *PostgresRepository {
+	return &PostgresRepository{db: db}
+}
+
+func (r *PostgresRepository) GetTier(ctx context.Context, userID uuid.UUID) (string, error) {
+	const query = `
+		SELECT COALESCE(
+			(SELECT subscription_tier::text FROM listener_profiles WHERE user_id = $1),
+			'free'
+		)
+	`
+	var tier string
+	if err := r.db.QueryRow(ctx, query, userID).Scan(&tier); err != nil {
+		return "", err
 	}
+	return tier, nil
+}
+
+func (r *PostgresRepository) Upgrade(
+	ctx context.Context,
+	userID uuid.UUID,
+	tier string,
+) error {
+	const query = `
+		INSERT INTO listener_profiles (user_id, subscription_tier)
+		VALUES ($1, $2)
+		ON CONFLICT (user_id) DO UPDATE
+		SET subscription_tier = EXCLUDED.subscription_tier, updated_at = NOW()
+	`
+	_, err := r.db.Exec(ctx, query, userID, tier)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *PostgresRepository) GetByUserID(

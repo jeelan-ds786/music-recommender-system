@@ -10,11 +10,19 @@ import (
 
 type contextKey string
 
-const UserIDKey contextKey = "user_id"
+const (
+	UserIDKey contextKey = "user_id"
+	TierKey   contextKey = "tier"
+)
 
 func UserIDFromContext(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(UserIDKey).(string)
 	return userID, ok
+}
+
+func TierFromContext(ctx context.Context) (string, bool) {
+	tier, ok := ctx.Value(TierKey).(string)
+	return tier, ok
 }
 
 func AuthMiddleware(jwtService *token.JWTService) func(http.Handler) http.Handler {
@@ -45,7 +53,30 @@ func AuthMiddleware(jwtService *token.JWTService) func(http.Handler) http.Handle
 			}
 
 			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+			ctx = context.WithValue(ctx, TierKey, claims.Tier)
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func TierMiddleware(allowedTiers ...string) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(allowedTiers))
+	for _, tier := range allowedTiers {
+		allowed[tier] = struct{}{}
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tier, ok := TierFromContext(r.Context())
+			if !ok {
+				writeError(w, http.StatusForbidden, "INSUFFICIENT_TIER")
+				return
+			}
+			if _, ok := allowed[tier]; !ok {
+				writeError(w, http.StatusForbidden, "INSUFFICIENT_TIER")
+				return
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }

@@ -9,8 +9,59 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/preference"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
 )
+
+const (
+	TierFree    = "free"
+	TierPremium = "premium"
+	TierFamily  = "family"
+	TierStudent = "student"
+	TierDuo     = "duo"
+)
+
+var ErrInvalidTier = errors.New("invalid subscription tier")
+
+type TokenIssuer interface {
+	IssueTokenPair(ctx context.Context, userID uuid.UUID) (*token.TokenPair, error)
+}
+
+type TierService struct {
+	repository  TierRepository
+	tokenIssuer TokenIssuer
+}
+
+func NewService(repository TierRepository, tokenIssuer TokenIssuer) *TierService {
+	return &TierService{repository: repository, tokenIssuer: tokenIssuer}
+}
+
+func (s *TierService) GetTier(ctx context.Context, userID uuid.UUID) (string, error) {
+	return s.repository.GetTier(ctx, userID)
+}
+
+func (s *TierService) Upgrade(
+	ctx context.Context,
+	userID uuid.UUID,
+	tier string,
+) (*token.TokenPair, error) {
+	if !IsValidTier(tier) {
+		return nil, ErrInvalidTier
+	}
+	if err := s.repository.Upgrade(ctx, userID, tier); err != nil {
+		return nil, err
+	}
+	return s.tokenIssuer.IssueTokenPair(ctx, userID)
+}
+
+func IsValidTier(tier string) bool {
+	switch tier {
+	case TierFree, TierPremium, TierFamily, TierStudent, TierDuo:
+		return true
+	default:
+		return false
+	}
+}
 
 type Service interface {
 	GetMe(ctx context.Context, userID uuid.UUID) (*MeResponse, error)
@@ -18,14 +69,14 @@ type Service interface {
 }
 
 type service struct {
-	profileRepo Repository
+	profileRepo ProfileRepository
 	prefRepo    preference.Repository
 	userRepo    user.Repository
 	log         *logger.Logger
 }
 
-func NewService(
-	profileRepo Repository,
+func NewProfileService(
+	profileRepo ProfileRepository,
 	prefRepo preference.Repository,
 	userRepo user.Repository,
 	log *logger.Logger,

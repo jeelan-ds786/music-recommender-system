@@ -133,7 +133,6 @@ func (s *AuthService) Login(
 	return s.tokenService.IssueTokenPair(
 		ctx,
 		existingUser.ID,
-		existingUser.AuthProvider,
 	)
 }
 

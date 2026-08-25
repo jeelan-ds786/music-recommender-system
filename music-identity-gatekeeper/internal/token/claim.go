@@ -7,8 +7,8 @@ import (
 )
 
 type Claims struct {
-	UserID   string `json:"user_id"`
-	Provider string `json:"auth_provider"`
+	UserID string `json:"user_id"`
+	Tier   string `json:"tier"`
 
 	jwt.RegisteredClaims
 }
@@ -23,7 +23,7 @@ type Claims struct {
 // Later jwt.go will take these claims and sign them.
 func NewAccessTokenClaims(
 	userID uuid.UUID,
-	authProvider string,
+	tier string,
 	ttl time.Duration,
 ) Claims {
 
@@ -50,12 +50,8 @@ func NewAccessTokenClaims(
 		// "550e8400-e29b-41d4-a716-446655440000"
 		UserID: userID.String(),
 
-		// Store the authentication provider.
-		//
-		// For a normal email/password login this will be:
-		//
-		// "local"
-		Provider: authProvider,
+		// Store the subscription tier used for authorization.
+		Tier: tier,
 
 		// Standard JWT claims.
 		RegisteredClaims: jwt.RegisteredClaims{

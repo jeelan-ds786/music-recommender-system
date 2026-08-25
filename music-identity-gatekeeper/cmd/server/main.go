@@ -46,16 +46,17 @@ func main() {
 
 	userRepo := user.NewRepository(pool)
 	refreshRepo := refresh.NewRepository(pool)
+	profileRepo := profile.NewRepository(pool)
 	jwtService := token.NewJWTService(jwtSecret)
-	tokenService := token.NewService(jwtService, refreshRepo)
+	tokenService := token.NewService(jwtService, refreshRepo, profileRepo)
+	_ = profile.NewService(profileRepo, tokenService)
 
 	authService := auth.NewService(userRepo, tokenService, appLogger)
 
 	authHandler := auth.NewHandler(authService)
 
 	preferenceRepo := preference.NewRepository(pool)
-	profileRepo := profile.NewRepository(pool)
-	profileService := profile.NewService(profileRepo, preferenceRepo, userRepo, appLogger)
+	profileService := profile.NewProfileService(profileRepo, preferenceRepo, userRepo, appLogger)
 	profileHandler := profile.NewHandler(profileService, appLogger)
 
 	r := chi.NewRouter()

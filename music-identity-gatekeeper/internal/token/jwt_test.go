@@ -11,7 +11,7 @@ import (
 func TestParseAccessToken(t *testing.T) {
 	const secret = "test-secret"
 	service := NewJWTService(secret)
-	validToken, err := service.GenerateAccessToken("user-123", "local")
+	validToken, err := service.GenerateAccessToken("user-123", "premium")
 	if err != nil {
 		t.Fatalf("generate valid token: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestParseAccessToken(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseAccessToken() error = %v", err)
 			}
-			if claims.UserID != "user-123" || claims.Provider != "local" {
+			if claims.UserID != "user-123" || claims.Tier != "premium" {
 				t.Fatalf("claims = %#v", claims)
 			}
 		})
@@ -66,8 +66,8 @@ func signTestToken(
 ) string {
 	t.Helper()
 	claims := Claims{
-		UserID:   "user-123",
-		Provider: "local",
+		UserID: "user-123",
+		Tier:   "premium",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 		},

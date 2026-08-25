@@ -11,6 +11,12 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
 )
 
+type staticTierProvider struct{ tier string }
+
+func (p staticTierProvider) GetTier(context.Context, uuid.UUID) (string, error) {
+	return p.tier, nil
+}
+
 type memoryRefreshRepository struct {
 	mu     sync.Mutex
 	tokens map[string]refresh.RefreshToken
@@ -69,8 +75,8 @@ func (r *memoryRefreshRepository) Rotate(
 func TestRefreshTokenRotationRejectsReuse(t *testing.T) {
 	ctx := context.Background()
 	repository := newMemoryRefreshRepository()
-	service := NewService(NewJWTService("test-secret"), repository)
-	initialPair, err := service.IssueTokenPair(ctx, uuid.New(), "local")
+	service := NewService(NewJWTService("test-secret"), repository, staticTierProvider{tier: "free"})
+	initialPair, err := service.IssueTokenPair(ctx, uuid.New())
 	if err != nil {
 		t.Fatalf("issue initial token pair: %v", err)
 	}

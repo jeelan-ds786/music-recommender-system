@@ -39,6 +39,12 @@ func (r *fakeUserRepository) GetByID(context.Context, uuid.UUID) (*user.User, er
 	return nil, user.ErrUserNotFound
 }
 
+type fakeTierProvider struct{ tier string }
+
+func (p fakeTierProvider) GetTier(context.Context, uuid.UUID) (string, error) {
+	return p.tier, nil
+}
+
 type fakeRefreshRepository struct{}
 
 func (fakeRefreshRepository) CreateRefreshToken(context.Context, *refresh.RefreshToken) error {
@@ -57,7 +63,11 @@ func (fakeRefreshRepository) Rotate(context.Context, string, *refresh.RefreshTok
 
 func newTestService(repo user.Repository) Service {
 	jwtService := token.NewJWTService("test-secret")
-	return NewService(repo, token.NewService(jwtService, fakeRefreshRepository{}), logger.New(logger.LevelNone))
+	return NewService(
+		repo,
+		token.NewService(jwtService, fakeRefreshRepository{}, fakeTierProvider{tier: "free"}),
+		logger.New(logger.LevelNone),
+	)
 }
 
 func TestRegister(t *testing.T) {
