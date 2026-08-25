@@ -211,6 +211,18 @@ func (r *PostgresRepository) ListLikedSongs(
 	limit int,
 ) ([]LikedSong, *Cursor, error) {
 
+	// The service layer already clamps limit before calling here, but this
+	// repository method is itself exported and callable directly (e.g. from
+	// a future gRPC handler or a test), so it must not trust an unbounded
+	// caller-supplied value when sizing the query LIMIT or the slice
+	// pre-allocation below.
+	if limit <= 0 {
+		limit = defaultLikedSongsLimit
+	}
+	if limit > maxLikedSongsLimit {
+		limit = maxLikedSongsLimit
+	}
+
 	var rows pgx.Rows
 	var err error
 

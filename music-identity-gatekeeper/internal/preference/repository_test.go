@@ -284,6 +284,28 @@ func TestPostgresRepository_ListLikedSongs_PaginatesWithoutDuplicatesOrGaps(t *t
 	}
 }
 
+// TestPostgresRepository_ListLikedSongs_ClampsExcessiveLimit calls the
+// repository directly (bypassing the service layer's own clamp) with an
+// absurdly large limit, the exact scenario a CodeQL "excessive slice
+// allocation" finding warns about. The repository must clamp internally
+// rather than trust the caller.
+func TestPostgresRepository_ListLikedSongs_ClampsExcessiveLimit(t *testing.T) {
+	ctx, _, repo, userID := newTestUser(t)
+
+	songID := uuid.New()
+	if err := repo.LikeSong(ctx, userID, songID); err != nil {
+		t.Fatalf("LikeSong failed: %v", err)
+	}
+
+	items, _, err := repo.ListLikedSongs(ctx, userID, nil, 1_000_000_000)
+	if err != nil {
+		t.Fatalf("ListLikedSongs with excessive limit failed: %v", err)
+	}
+	if len(items) != 1 || items[0].SongID != songID {
+		t.Fatalf("expected the single liked song, got %v", items)
+	}
+}
+
 func TestPostgresRepository_FollowArtist_IdempotentAndDualWrites(t *testing.T) {
 	ctx, _, repo, userID := newTestUser(t)
 	artistID := uuid.New()
