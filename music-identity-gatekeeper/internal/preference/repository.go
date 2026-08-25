@@ -254,7 +254,12 @@ func (r *PostgresRepository) ListLikedSongs(
 	}
 	defer rows.Close()
 
-	items := make([]LikedSong, 0, limit)
+	// Capacity is the fixed upper bound (limit is clamped to
+	// maxLikedSongsLimit above, and at most limit+1 rows are fetched), not
+	// the caller-supplied limit itself — CodeQL's excessive-allocation
+	// check flags any size expression that still references a
+	// user-influenced value, even one already clamped via reassignment.
+	items := make([]LikedSong, 0, maxLikedSongsLimit+1)
 	for rows.Next() {
 		var item LikedSong
 		if err := rows.Scan(&item.SongID, &item.CreatedAt); err != nil {
