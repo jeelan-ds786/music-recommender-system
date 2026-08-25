@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/go-chi/chi/v5"
@@ -12,8 +13,12 @@ import (
 
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/auth"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/db"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/httplog"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/preference"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
 )
@@ -31,7 +36,10 @@ func main() {
 		log.Fatal("JWT_SECRET is required")
 	}
 
-	pool, err := db.NewPostgresPool(ctx, dsn)
+	appLogger := logger.New(logger.ParseLevel(os.Getenv("LOG_LEVEL")))
+	appLogger.Info("", "connecting to postgres at %s", maskDSN(dsn))
+
+	pool, err := db.NewPostgresPool(ctx, dsn, db.NewQueryTracer(appLogger))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -43,11 +51,17 @@ func main() {
 	tokenService := token.NewService(jwtService, refreshRepo, profileRepo)
 	_ = profile.NewService(profileRepo, tokenService)
 
-	authService := auth.NewService(userRepo, tokenService)
+	authService := auth.NewService(userRepo, tokenService, appLogger)
 
 	authHandler := auth.NewHandler(authService)
 
+	preferenceRepo := preference.NewRepository(pool)
+	profileService := profile.NewProfileService(profileRepo, preferenceRepo, userRepo, appLogger)
+	profileHandler := profile.NewHandler(profileService, appLogger)
+
 	r := chi.NewRouter()
+	r.Use(reqid.Middleware)
+	r.Use(httplog.Middleware(appLogger))
 
 	r.Route("/auth", func(r chi.Router) {
 		r.Post("/register", authHandler.Register)
@@ -55,11 +69,25 @@ func main() {
 		r.Post("/refresh", authHandler.Refresh)
 	})
 
-	r.With(auth.AuthMiddleware(jwtService)).Get("/me", authHandler.Me)
+	r.With(auth.AuthMiddleware(jwtService)).Get("/me", profileHandler.Me)
+	r.With(auth.AuthMiddleware(jwtService)).Patch("/me", profileHandler.PatchMe)
 
 	log.Println("server listening on :8080")
 
 	if err := http.ListenAndServe(":8080", r); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func maskDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "invalid DB_URL"
+	}
+
+	if u.User != nil {
+		u.User = url.UserPassword(u.User.Username(), "****")
+	}
+
+	return u.String()
 }

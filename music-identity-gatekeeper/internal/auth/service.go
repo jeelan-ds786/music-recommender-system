@@ -3,12 +3,17 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
 )
+
+const dummyPasswordHash = "$2a$12$D4G5f18o7aMMfwasBL7X6uJkHQdVyCzEOv.a8cF9Q8S1cS1Jyd9rq"
 
 type Service interface {
 	Register(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
@@ -17,17 +22,22 @@ type Service interface {
 }
 
 type AuthService struct {
-	userRepo     user.Repository
-	tokenService *token.Service
+	userRepo        user.Repository
+	tokenService    *token.Service
+	comparePassword func(string, string) error
+	log             *logger.Logger
 }
 
 func NewService(
 	userRepo user.Repository,
 	tokenService *token.Service,
+	log *logger.Logger,
 ) Service {
 	return &AuthService{
-		userRepo:     userRepo,
-		tokenService: tokenService,
+		userRepo:        userRepo,
+		tokenService:    tokenService,
+		comparePassword: ComparePassword,
+		log:             log,
 	}
 }
 
@@ -35,6 +45,13 @@ func (s *AuthService) Register(
 	ctx context.Context,
 	req RegisterRequest,
 ) (*RegisterResponse, error) {
+	req.Email = normalizeEmail(req.Email)
+
+	rid, _ := reqid.FromContext(ctx)
+
+	s.log.Debug(rid, "Starting registration for email=%s", req.Email)
+
+	s.log.Debug(rid, "checking users table for email=%s", req.Email)
 
 	existingUser, err := s.userRepo.GetByEmail(
 		ctx,
@@ -42,16 +59,22 @@ func (s *AuthService) Register(
 	)
 
 	if err == nil && existingUser != nil {
+		s.log.Info(rid, "found existing user id=%s for email=%s", existingUser.ID, req.Email)
+		s.log.Info(rid, "Ending registration for email=%s (rejected: already exists)", req.Email)
 		return nil, ErrEmailAlreadyExists
 	}
 
 	if err != nil &&
 		!errors.Is(err, user.ErrUserNotFound) {
+		s.log.Error(rid, "Ending registration for email=%s (lookup error: %v)", req.Email, err)
 		return nil, err
 	}
 
+	s.log.Debug(rid, "no data found for email=%s", req.Email)
+
 	passwordHash, err := HashPassword(req.Password)
 	if err != nil {
+		s.log.Error(rid, "Ending registration for email=%s (hash error: %v)", req.Email, err)
 		return nil, err
 	}
 
@@ -68,8 +91,12 @@ func (s *AuthService) Register(
 	)
 
 	if err != nil {
+		s.log.Error(rid, "Ending registration for email=%s (write error: %v)", req.Email, err)
 		return nil, err
 	}
+
+	s.log.Info(rid, "write completed for user id=%s email=%s", newUser.ID, req.Email)
+	s.log.Debug(rid, "Ending registration for email=%s", req.Email)
 
 	return &RegisterResponse{
 		ID:      newUser.ID,
@@ -82,22 +109,24 @@ func (s *AuthService) Login(
 	ctx context.Context,
 	req LoginRequest,
 ) (*token.TokenPair, error) {
+	req.Email = normalizeEmail(req.Email)
 
 	existingUser, err := s.userRepo.GetByEmail(
 		ctx,
 		req.Email,
 	)
 
-	if err != nil {
-		return nil, ErrInvalidCredentials
+	if err != nil && !errors.Is(err, user.ErrUserNotFound) {
+		return nil, err
 	}
 
-	err = ComparePassword(
-		existingUser.HashedPassword,
-		req.Password,
-	)
+	passwordHash := dummyPasswordHash
+	if err == nil && existingUser != nil {
+		passwordHash = existingUser.HashedPassword
+	}
 
-	if err != nil {
+	passwordErr := s.comparePassword(passwordHash, req.Password)
+	if passwordErr != nil || existingUser == nil {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -115,4 +144,8 @@ func (s *AuthService) Refresh(
 		ctx,
 		req.RefreshToken,
 	)
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }

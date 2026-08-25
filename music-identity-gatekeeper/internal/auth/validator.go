@@ -7,8 +7,8 @@ import (
 )
 
 type ValidationError struct {
-	Error string
-	Field string
+	Error string `json:"error"`
+	Field string `json:"field"`
 }
 
 var validate = validator.New()

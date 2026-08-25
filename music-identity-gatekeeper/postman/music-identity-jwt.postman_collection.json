@@ -20,9 +20,9 @@
           "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
         },
         "url": {
-          "raw": "{{baseUrl}}/auth/register",
+          "raw": "{{migUrl}}/auth/register",
           "host": [
-            "{{baseUrl}}"
+            "{{migUrl}}"
           ],
           "path": [
             "auth",
@@ -59,9 +59,9 @@
           "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
         },
         "url": {
-          "raw": "{{baseUrl}}/auth/login",
+          "raw": "{{migUrl}}/auth/login",
           "host": [
-            "{{baseUrl}}"
+            "{{migUrl}}"
           ],
           "path": [
             "auth",
@@ -95,7 +95,43 @@
       ]
     },
     {
-      "name": "3. Me (Protected)",
+      "name": "3. Me Unauthenticated (Should Fail)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{migUrl}}/me",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Unauthenticated /me is rejected with structured 401', function () {",
+              "    pm.response.to.have.status(401);",
+              "});",
+              "",
+              "var data = {};",
+              "try { data = pm.response.json(); } catch (e) {}",
+              "",
+              "pm.test('Error body has an error code', function () {",
+              "    pm.expect(data.error).to.be.a('string').and.not.empty;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Me (Protected)",
       "request": {
         "method": "GET",
         "header": [
@@ -105,9 +141,9 @@
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/me",
+          "raw": "{{migUrl}}/me",
           "host": [
-            "{{baseUrl}}"
+            "{{migUrl}}"
           ],
           "path": [
             "me"
@@ -124,11 +160,17 @@
               "    pm.response.to.have.status(200);",
               "});",
               "",
-              "var data = {};",
-              "try { data = pm.response.json(); } catch (e) {}",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
               "",
-              "pm.test('user_id is present', function () {",
-              "    pm.expect(data.user_id).to.be.a('string').and.not.empty;",
+              "pm.test('Response has account, profile, tier, preferences', function () {",
+              "    pm.expect(data.account).to.be.an('object');",
+              "    pm.expect(data.account.email).to.eql(pm.collectionVariables.get('email'));",
+              "    pm.expect(data.profile).to.be.an('object');",
+              "    pm.expect(data.tier).to.eql('free');",
+              "    pm.expect(data.preferences).to.be.an('object');",
+              "    pm.expect(data.preferences.liked_song_ids).to.be.an('array');",
               "});"
             ]
           }
@@ -136,7 +178,207 @@
       ]
     },
     {
-      "name": "4. Refresh",
+      "name": "5. Patch Me - Display Name",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"display_name\": \"User1\"\n}"
+        },
+        "url": {
+          "raw": "{{migUrl}}/me",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Patch status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "",
+              "pm.test('display_name was set, other fields untouched', function () {",
+              "    pm.expect(data.profile.display_name).to.eql('User1');",
+              "    pm.expect(data.profile.country).to.be.null;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Patch Me - Country (Verifies Prior Field Preserved)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"country\": \"US\"\n}"
+        },
+        "url": {
+          "raw": "{{migUrl}}/me",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Patch status is 200', function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "var body = {};",
+              "try { body = pm.response.json(); } catch (e) {}",
+              "var data = body.data || {};",
+              "",
+              "pm.test('country was set AND display_name from the previous patch survived', function () {",
+              "    pm.expect(data.profile.country).to.eql('US');",
+              "    pm.expect(data.profile.display_name).to.eql('User1');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Patch Me - Invalid Country (Should Fail)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"country\": \"us\"\n}"
+        },
+        "url": {
+          "raw": "{{migUrl}}/me",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Lowercase country code is rejected with structured 400', function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "",
+              "var data = {};",
+              "try { data = pm.response.json(); } catch (e) {}",
+              "",
+              "pm.test('Error identifies the country field', function () {",
+              "    pm.expect(data.field).to.eql('country');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Patch Me - Invalid Birth Year (Should Fail)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"birth_year\": 1800\n}"
+        },
+        "url": {
+          "raw": "{{migUrl}}/me",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "me"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Out-of-range birth year is rejected with structured 400', function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "",
+              "var data = {};",
+              "try { data = pm.response.json(); } catch (e) {}",
+              "",
+              "pm.test('Error identifies the birth_year field', function () {",
+              "    pm.expect(data.field).to.eql('birth_year');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Refresh",
       "request": {
         "method": "POST",
         "header": [
@@ -150,9 +392,9 @@
           "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
         },
         "url": {
-          "raw": "{{baseUrl}}/auth/refresh",
+          "raw": "{{migUrl}}/auth/refresh",
           "host": [
-            "{{baseUrl}}"
+            "{{migUrl}}"
           ],
           "path": [
             "auth",
@@ -189,7 +431,7 @@
       ]
     },
     {
-      "name": "5. Refresh With Old Token (Should Fail)",
+      "name": "10. Refresh With Old Token (Should Fail)",
       "request": {
         "method": "POST",
         "header": [
@@ -203,9 +445,9 @@
           "raw": "{\n  \"refresh_token\": \"{{oldRefreshToken}}\"\n}"
         },
         "url": {
-          "raw": "{{baseUrl}}/auth/refresh",
+          "raw": "{{migUrl}}/auth/refresh",
           "host": [
-            "{{baseUrl}}"
+            "{{migUrl}}"
           ],
           "path": [
             "auth",
@@ -228,7 +470,7 @@
       ]
     },
     {
-      "name": "6. Me With Invalid JWT (Should Fail)",
+      "name": "11. Me With Invalid JWT (Should Fail)",
       "request": {
         "method": "GET",
         "header": [
@@ -238,9 +480,9 @@
           }
         ],
         "url": {
-          "raw": "{{baseUrl}}/me",
+          "raw": "{{migUrl}}/me",
           "host": [
-            "{{baseUrl}}"
+            "{{migUrl}}"
           ],
           "path": [
             "me"
@@ -264,7 +506,7 @@
   ],
   "variable": [
     {
-      "key": "baseUrl",
+      "key": "migUrl",
       "value": "http://localhost:8080"
     },
     {

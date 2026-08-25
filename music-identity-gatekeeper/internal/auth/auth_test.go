@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
@@ -62,7 +63,11 @@ func (fakeRefreshRepository) Rotate(context.Context, string, *refresh.RefreshTok
 
 func newTestService(repo user.Repository) Service {
 	jwtService := token.NewJWTService("test-secret")
-	return NewService(repo, token.NewService(jwtService, fakeRefreshRepository{}, fakeTierProvider{tier: "free"}))
+	return NewService(
+		repo,
+		token.NewService(jwtService, fakeRefreshRepository{}, fakeTierProvider{tier: "free"}),
+		logger.New(logger.LevelNone),
+	)
 }
 
 func TestRegister(t *testing.T) {
