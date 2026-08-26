@@ -19,6 +19,7 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/revocation"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/user"
 )
@@ -48,12 +49,27 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = os.Getenv("REDIS_URL")
+	}
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient, err := db.NewRedisClient(redisAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		_ = redisClient.Close()
+	}()
+	blacklist := revocation.NewStore(redisClient)
 
 	userRepo := user.NewRepository(pool)
 	refreshRepo := refresh.NewRepository(pool)
 	profileRepo := profile.NewRepository(pool)
 	jwtService := token.NewJWTService(jwtSecret)
-	tokenService := token.NewService(jwtService, refreshRepo, profileRepo, appLogger)
+	tokenService := token.NewService(jwtService, refreshRepo, profileRepo, appLogger, blacklist)
 	_ = profile.NewService(profileRepo, tokenService)
 
 	authService := auth.NewService(userRepo, tokenService, appLogger)
@@ -70,22 +86,24 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(reqid.Middleware)
 	r.Use(httplog.Middleware(appLogger))
+	authenticate := auth.AuthMiddleware(jwtService, appLogger, blacklist)
 
 	r.Route("/auth", func(r chi.Router) {
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
 		r.Post("/refresh", authHandler.Refresh)
+		r.With(authenticate).Post("/logout", authHandler.Logout)
 	})
 
-	r.With(auth.AuthMiddleware(jwtService, appLogger)).Get("/me", profileHandler.Me)
-	r.With(auth.AuthMiddleware(jwtService, appLogger)).Patch("/me", profileHandler.PatchMe)
+	r.With(authenticate).Get("/me", profileHandler.Me)
+	r.With(authenticate).Patch("/me", profileHandler.PatchMe)
 
-	r.With(auth.AuthMiddleware(jwtService, appLogger)).Post("/me/onboarding", preferenceHandler.Onboarding)
-	r.With(auth.AuthMiddleware(jwtService, appLogger)).Post("/me/likes/songs/{songID}", preferenceHandler.LikeSong)
-	r.With(auth.AuthMiddleware(jwtService, appLogger)).Delete("/me/likes/songs/{songID}", preferenceHandler.UnlikeSong)
-	r.With(auth.AuthMiddleware(jwtService, appLogger)).Get("/me/likes/songs", preferenceHandler.ListLikedSongs)
-	r.With(auth.AuthMiddleware(jwtService, appLogger)).Post("/me/following/artists/{artistID}", preferenceHandler.FollowArtist)
-	r.With(auth.AuthMiddleware(jwtService, appLogger)).Delete("/me/following/artists/{artistID}", preferenceHandler.UnfollowArtist)
+	r.With(authenticate).Post("/me/onboarding", preferenceHandler.Onboarding)
+	r.With(authenticate).Post("/me/likes/songs/{songID}", preferenceHandler.LikeSong)
+	r.With(authenticate).Delete("/me/likes/songs/{songID}", preferenceHandler.UnlikeSong)
+	r.With(authenticate).Get("/me/likes/songs", preferenceHandler.ListLikedSongs)
+	r.With(authenticate).Post("/me/following/artists/{artistID}", preferenceHandler.FollowArtist)
+	r.With(authenticate).Delete("/me/following/artists/{artistID}", preferenceHandler.UnfollowArtist)
 
 	log.Printf("server listening on :%s", port)
 

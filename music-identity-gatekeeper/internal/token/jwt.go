@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // AccessTokenTTL defines how long an access token is valid.
@@ -113,6 +114,7 @@ func (s *JWTService) GenerateAccessToken(
 
 		// RegisteredClaims contains standard JWT claims.
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID: uuid.NewString(),
 
 			// "iat" = Issued At.
 			//
@@ -227,6 +229,9 @@ func (s *JWTService) ParseAccessToken(
 	// 2. The JWT passed validation.
 	if !ok || !token.Valid {
 		return nil, jwt.ErrTokenInvalidClaims
+	}
+	if claims.ID == "" || claims.ExpiresAt == nil {
+		return nil, jwt.ErrTokenRequiredClaimMissing
 	}
 
 	// Everything passed validation.

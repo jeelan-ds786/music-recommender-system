@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -19,6 +20,7 @@ type Service interface {
 	Register(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
 	Login(ctx context.Context, req LoginRequest) (*token.TokenPair, error)
 	Refresh(ctx context.Context, req RefreshRequest) (*token.TokenPair, error)
+	Logout(ctx context.Context, req LogoutRequest, userID uuid.UUID, jti string, expiresAt time.Time) error
 }
 
 type AuthService struct {
@@ -144,6 +146,16 @@ func (s *AuthService) Refresh(
 		ctx,
 		req.RefreshToken,
 	)
+}
+
+func (s *AuthService) Logout(
+	ctx context.Context,
+	req LogoutRequest,
+	userID uuid.UUID,
+	jti string,
+	expiresAt time.Time,
+) error {
+	return s.tokenService.Logout(ctx, userID, req.RefreshToken, jti, expiresAt)
 }
 
 func normalizeEmail(email string) string {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 func TestParseAccessToken(t *testing.T) {
@@ -54,7 +55,34 @@ func TestParseAccessToken(t *testing.T) {
 			if claims.UserID != "user-123" || claims.Tier != "premium" {
 				t.Fatalf("claims = %#v", claims)
 			}
+			if _, err := uuid.Parse(claims.ID); err != nil {
+				t.Fatalf("jti = %q, want UUID: %v", claims.ID, err)
+			}
 		})
+	}
+}
+
+func TestGenerateAccessTokenUsesUniqueJTI(t *testing.T) {
+	service := NewJWTService("test-secret")
+	firstToken, err := service.GenerateAccessToken("user-123", "free")
+	if err != nil {
+		t.Fatalf("GenerateAccessToken() first error = %v", err)
+	}
+	secondToken, err := service.GenerateAccessToken("user-123", "free")
+	if err != nil {
+		t.Fatalf("GenerateAccessToken() second error = %v", err)
+	}
+
+	firstClaims, err := service.ParseAccessToken(firstToken)
+	if err != nil {
+		t.Fatalf("ParseAccessToken() first error = %v", err)
+	}
+	secondClaims, err := service.ParseAccessToken(secondToken)
+	if err != nil {
+		t.Fatalf("ParseAccessToken() second error = %v", err)
+	}
+	if firstClaims.ID == secondClaims.ID {
+		t.Fatalf("jti = %q for both tokens, want unique values", firstClaims.ID)
 	}
 }
 
