@@ -7,12 +7,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 )
 
 func TestTierMiddleware(t *testing.T) {
 	jwtService := token.NewJWTService("test-secret")
-	premiumOnly := AuthMiddleware(jwtService)(TierMiddleware("premium")(
+	premiumOnly := AuthMiddleware(jwtService, logger.New(logger.LevelNone))(TierMiddleware("premium")(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID, userOK := UserIDFromContext(r.Context())
 			tier, tierOK := TierFromContext(r.Context())

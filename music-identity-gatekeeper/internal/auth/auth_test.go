@@ -65,7 +65,7 @@ func newTestService(repo user.Repository) Service {
 	jwtService := token.NewJWTService("test-secret")
 	return NewService(
 		repo,
-		token.NewService(jwtService, fakeRefreshRepository{}, fakeTierProvider{tier: "free"}),
+		token.NewService(jwtService, fakeRefreshRepository{}, fakeTierProvider{tier: "free"}, logger.New(logger.LevelNone)),
 		logger.New(logger.LevelNone),
 	)
 }

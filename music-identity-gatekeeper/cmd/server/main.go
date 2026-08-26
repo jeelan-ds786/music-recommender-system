@@ -36,6 +36,11 @@ func main() {
 		log.Fatal("JWT_SECRET is required")
 	}
 
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
 	appLogger := logger.New(logger.ParseLevel(os.Getenv("LOG_LEVEL")))
 	appLogger.Info("", "connecting to postgres at %s", maskDSN(dsn))
 
@@ -48,7 +53,7 @@ func main() {
 	refreshRepo := refresh.NewRepository(pool)
 	profileRepo := profile.NewRepository(pool)
 	jwtService := token.NewJWTService(jwtSecret)
-	tokenService := token.NewService(jwtService, refreshRepo, profileRepo)
+	tokenService := token.NewService(jwtService, refreshRepo, profileRepo, appLogger)
 	_ = profile.NewService(profileRepo, tokenService)
 
 	authService := auth.NewService(userRepo, tokenService, appLogger)
@@ -58,6 +63,9 @@ func main() {
 	preferenceRepo := preference.NewRepository(pool)
 	profileService := profile.NewProfileService(profileRepo, preferenceRepo, userRepo, appLogger)
 	profileHandler := profile.NewHandler(profileService, appLogger)
+
+	preferenceService := preference.NewService(preferenceRepo, appLogger)
+	preferenceHandler := preference.NewHandler(preferenceService, appLogger)
 
 	r := chi.NewRouter()
 	r.Use(reqid.Middleware)
@@ -69,12 +77,19 @@ func main() {
 		r.Post("/refresh", authHandler.Refresh)
 	})
 
-	r.With(auth.AuthMiddleware(jwtService)).Get("/me", profileHandler.Me)
-	r.With(auth.AuthMiddleware(jwtService)).Patch("/me", profileHandler.PatchMe)
+	r.With(auth.AuthMiddleware(jwtService, appLogger)).Get("/me", profileHandler.Me)
+	r.With(auth.AuthMiddleware(jwtService, appLogger)).Patch("/me", profileHandler.PatchMe)
 
-	log.Println("server listening on :8080")
+	r.With(auth.AuthMiddleware(jwtService, appLogger)).Post("/me/onboarding", preferenceHandler.Onboarding)
+	r.With(auth.AuthMiddleware(jwtService, appLogger)).Post("/me/likes/songs/{songID}", preferenceHandler.LikeSong)
+	r.With(auth.AuthMiddleware(jwtService, appLogger)).Delete("/me/likes/songs/{songID}", preferenceHandler.UnlikeSong)
+	r.With(auth.AuthMiddleware(jwtService, appLogger)).Get("/me/likes/songs", preferenceHandler.ListLikedSongs)
+	r.With(auth.AuthMiddleware(jwtService, appLogger)).Post("/me/following/artists/{artistID}", preferenceHandler.FollowArtist)
+	r.With(auth.AuthMiddleware(jwtService, appLogger)).Delete("/me/following/artists/{artistID}", preferenceHandler.UnfollowArtist)
 
-	if err := http.ListenAndServe(":8080", r); err != nil {
+	log.Printf("server listening on :%s", port)
+
+	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatal(err)
 	}
 }

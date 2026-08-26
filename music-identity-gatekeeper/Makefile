@@ -1,7 +1,7 @@
 include .env
 export
 
-.PHONY: fmt lint lint-fix test check migrate-up migrate-down
+.PHONY: fmt lint lint-fix test check migrate-up migrate-down migrate-down-clean
 
 fmt:
 	gofmt -w .
@@ -30,6 +30,9 @@ migrate-up:
 
 migrate-down:
 	migrate -path migrations -database "$(DB_URL)" down 1
+
+migrate-down-clean:
+	migrate -path migrations -database "$(DB_URL)" down -all
 
 dev:
 	go run ./cmd/server

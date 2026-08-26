@@ -138,6 +138,30 @@ func (f *fakePreferenceRepository) GetByUserID(ctx context.Context, userID uuid.
 	return f.pref, nil
 }
 
+func (f *fakePreferenceRepository) LikeSong(ctx context.Context, userID, songID uuid.UUID) error {
+	return nil
+}
+
+func (f *fakePreferenceRepository) UnlikeSong(ctx context.Context, userID, songID uuid.UUID) error {
+	return nil
+}
+
+func (f *fakePreferenceRepository) ListLikedSongs(ctx context.Context, userID uuid.UUID, cursor *preference.Cursor, limit int) ([]preference.LikedSong, *preference.Cursor, error) {
+	return nil, nil, nil
+}
+
+func (f *fakePreferenceRepository) FollowArtist(ctx context.Context, userID, artistID uuid.UUID) error {
+	return nil
+}
+
+func (f *fakePreferenceRepository) UnfollowArtist(ctx context.Context, userID, artistID uuid.UUID) error {
+	return nil
+}
+
+func (f *fakePreferenceRepository) CompleteOnboarding(ctx context.Context, userID uuid.UUID, fields preference.OnboardingFields) error {
+	return nil
+}
+
 type fakeUserRepository struct {
 	u      *user.User
 	getErr error
