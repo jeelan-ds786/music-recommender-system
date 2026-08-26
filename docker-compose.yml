@@ -21,6 +21,50 @@ services:
       timeout: 3s
       retries: 5
 
+  kafka:
+    image: apache/kafka:latest
+    # Host port 9092 is intentionally not used here — this machine already
+    # runs an unrelated Kafka container bound to it. A second listener
+    # (PLAINTEXT_HOST) is dedicated to host-machine access on 9094; other
+    # containers on this compose network keep reaching this broker as
+    # kafka:9092 internally, unaffected by the host mapping below.
+    ports: ["9094:9094"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,PLAINTEXT_HOST://:9094,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9094"
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # This is a single-broker cluster, so the __consumer_offsets internal
+      # topic (default replication factor 3) can never be created without
+      # this override — any consumer-group-based client hangs indefinitely
+      # waiting on group coordination without it.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # Fixed, arbitrary cluster ID for this single-node local dev broker
+      # (generated once via `kafka-storage.sh random-uuid`) — not a secret,
+      # just an identifier KRaft requires at startup.
+      CLUSTER_ID: t3hxh5naTGqCVM9lc_qgcw
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: creates the event topics after kafka is healthy, then exits.
+  # Explicit init rather than relying on broker auto-create, per E1-SS-08.
+  kafka-init:
+    image: apache/kafka:latest
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "/opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.registered --partitions 1 --replication-factor 1 &&
+       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.preference.updated --partitions 1 --replication-factor 1"
+
   identity-svc:
     build: ./music-identity-gatekeeper
     ports: ["8080:8080"]
