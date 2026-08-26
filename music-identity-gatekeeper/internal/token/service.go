@@ -118,6 +118,15 @@ type TierProvider interface {
 	GetTier(ctx context.Context, userID uuid.UUID) (string, error)
 }
 
+type Blacklist interface {
+	Blacklist(ctx context.Context, jti string, ttl time.Duration) error
+}
+
+var (
+	ErrInvalidRefreshToken   = errors.New("invalid refresh token")
+	ErrRevocationUnavailable = errors.New("token revocation unavailable")
+)
+
 // Service is the central authentication token service.
 //
 // It coordinates:
@@ -147,7 +156,8 @@ type Service struct {
 	// log records session-validation activity (refresh-token lookups,
 	// rotation outcomes) at Debug/Info/Error, same convention used
 	// throughout the rest of the service layer.
-	log *logger.Logger
+	log       *logger.Logger
+	blacklist Blacklist
 }
 
 // NewService creates the central token service.
@@ -164,7 +174,12 @@ func NewService(
 	refreshRepo RefreshRepository,
 	tierProvider TierProvider,
 	log *logger.Logger,
+	blacklists ...Blacklist,
 ) *Service {
+	var blacklist Blacklist
+	if len(blacklists) > 0 {
+		blacklist = blacklists[0]
+	}
 
 	// Return a new token service containing all four dependencies.
 	return &Service{
@@ -172,7 +187,38 @@ func NewService(
 		refreshRepo:  refreshRepo,
 		tierProvider: tierProvider,
 		log:          log,
+		blacklist:    blacklist,
 	}
+}
+
+func (s *Service) Logout(
+	ctx context.Context,
+	userID uuid.UUID,
+	rawRefreshToken string,
+	jti string,
+	expiresAt time.Time,
+) error {
+	if rawRefreshToken == "" {
+		return ErrInvalidRefreshToken
+	}
+	if s.blacklist == nil {
+		return ErrRevocationUnavailable
+	}
+
+	tokenHash := hashRefreshToken(rawRefreshToken)
+	storedToken, err := s.refreshRepo.GetByHash(ctx, tokenHash)
+	if err != nil || storedToken.Revoked || storedToken.UserID != userID {
+		return ErrInvalidRefreshToken
+	}
+
+	ttl := time.Until(expiresAt)
+	if err := s.blacklist.Blacklist(ctx, jti, ttl); err != nil {
+		return fmt.Errorf("%w: %v", ErrRevocationUnavailable, err)
+	}
+	if err := s.refreshRepo.Revoke(ctx, tokenHash); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRefreshToken, err)
+	}
+	return nil
 }
 
 // IssueTokenPair generates both access and refresh tokens.
