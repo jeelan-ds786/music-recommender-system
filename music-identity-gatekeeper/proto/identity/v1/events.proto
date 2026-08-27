@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package identity.v1;
+
+option go_package = "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event/eventpb;eventpb";
+
+import "google/protobuf/timestamp.proto";
+
+// EventMetadata is embedded in every domain event this service publishes.
+// event_id lets a downstream consumer deduplicate a redelivered message;
+// schema_version starts at 1 and is bumped whenever a message's field
+// semantics change in a way consumers must account for.
+message EventMetadata {
+  string event_id = 1;
+  string event_type = 2;
+  int32 schema_version = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  string user_id = 5;
+}
+
+// UserRegistered is published once, after a new user successfully
+// completes registration.
+message UserRegistered {
+  EventMetadata metadata = 1;
+  string email = 2;
+}
+
+// UserPreferenceUpdated is published after onboarding, a like/unlike, a
+// follow/unfollow, or any other preference-affecting mutation. The
+// envelope alone identifies which user and when; it carries no per-field
+// diff, since no downstream consumer schema for one exists yet.
+message UserPreferenceUpdated {
+  EventMetadata metadata = 1;
+}
