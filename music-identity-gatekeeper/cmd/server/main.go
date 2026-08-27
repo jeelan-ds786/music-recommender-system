@@ -15,6 +15,7 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/db"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/httplog"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
+	oauthflow "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/oauth"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/preference"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
@@ -48,6 +49,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient, err := db.NewRedisClient(redisAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() { _ = redisClient.Close() }()
 
 	userRepo := user.NewRepository(pool)
 	refreshRepo := refresh.NewRepository(pool)
@@ -59,6 +69,18 @@ func main() {
 	authService := auth.NewService(userRepo, tokenService, appLogger)
 
 	authHandler := auth.NewHandler(authService)
+
+	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
+	googleClientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	googleRedirectURL := os.Getenv("GOOGLE_REDIRECT_URL")
+	if googleClientID == "" || googleClientSecret == "" || googleRedirectURL == "" {
+		log.Fatal("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URL are required")
+	}
+	oauthStates := oauthflow.NewStateManager(oauthflow.NewRedisStateStore(redisClient))
+	googleProvider := oauthflow.NewGoogleProvider(googleClientID, googleClientSecret, googleRedirectURL)
+	oauthAccounts := oauthflow.NewAccountRepository(pool)
+	oauthService := oauthflow.NewService(oauthStates, googleProvider, userRepo, oauthAccounts, profileRepo, tokenService)
+	oauthHandler := oauthflow.NewHandler(oauthService)
 
 	preferenceRepo := preference.NewRepository(pool)
 	profileService := profile.NewProfileService(profileRepo, preferenceRepo, userRepo, appLogger)
@@ -75,6 +97,8 @@ func main() {
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
 		r.Post("/refresh", authHandler.Refresh)
+		r.Get("/google", oauthHandler.Begin)
+		r.Get("/google/callback", oauthHandler.Callback)
 	})
 
 	r.With(auth.AuthMiddleware(jwtService, appLogger)).Get("/me", profileHandler.Me)
