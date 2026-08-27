@@ -76,3 +76,6 @@ services:
     environment:
       DB_URL: "postgres://muse:secret@postgres:5432/muse_identity?sslmode=disable"
       REDIS_ADDR: "redis:6379"
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+      GOOGLE_REDIRECT_URL: "${GOOGLE_REDIRECT_URL:-http://localhost:8080/auth/google/callback}"
