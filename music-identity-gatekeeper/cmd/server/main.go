@@ -3,11 +3,16 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"google.golang.org/grpc"
 
 	"github.com/joho/godotenv"
 
@@ -18,6 +23,7 @@ import (
 	oauthflow "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/oauth"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/preference"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile/profilepb"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
@@ -49,6 +55,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer pool.Close()
 	redisAddr := os.Getenv("REDIS_ADDR")
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
@@ -111,9 +118,29 @@ func main() {
 	r.With(auth.AuthMiddleware(jwtService, appLogger)).Post("/me/following/artists/{artistID}", preferenceHandler.FollowArtist)
 	r.With(auth.AuthMiddleware(jwtService, appLogger)).Delete("/me/following/artists/{artistID}", preferenceHandler.UnfollowArtist)
 
-	log.Printf("server listening on :%s", port)
+	httpListener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	grpcListener, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	if err := http.ListenAndServe(":"+port, r); err != nil {
+	httpServer := &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	grpcServer := grpc.NewServer()
+	profilepb.RegisterIdentityServiceServer(grpcServer, profile.NewGRPCServer(profileService))
+
+	shutdownContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	log.Printf("HTTP server listening on :%s", port)
+	log.Printf("internal gRPC server listening on :50051")
+	if err := serve(shutdownContext, httpServer, httpListener, grpcServer, grpcListener); err != nil {
 		log.Fatal(err)
 	}
 }
