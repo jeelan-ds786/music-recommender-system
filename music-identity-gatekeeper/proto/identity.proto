@@ -19,4 +19,4 @@ message GetListenerProfileResponse {
   repeated string language_preferences = 4;
   repeated string followed_artist_ids = 5;
   int32 liked_song_count = 6;
-} 
+}
