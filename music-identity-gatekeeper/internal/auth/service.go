@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
@@ -26,18 +27,21 @@ type AuthService struct {
 	tokenService    *token.Service
 	comparePassword func(string, string) error
 	log             *logger.Logger
+	emitter         *event.Emitter
 }
 
 func NewService(
 	userRepo user.Repository,
 	tokenService *token.Service,
 	log *logger.Logger,
+	emitter *event.Emitter,
 ) Service {
 	return &AuthService{
 		userRepo:        userRepo,
 		tokenService:    tokenService,
 		comparePassword: ComparePassword,
 		log:             log,
+		emitter:         emitter,
 	}
 }
 
@@ -96,6 +100,13 @@ func (s *AuthService) Register(
 	}
 
 	s.log.Info(rid, "write completed for user id=%s email=%s", newUser.ID, req.Email)
+
+	if s.emitter != nil {
+		if err := s.emitter.EmitUserRegistered(ctx, nil, newUser.ID.String(), req.Email); err != nil {
+			s.log.Error(rid, "failed to enqueue user.registered event for user_id=%s: %v", newUser.ID, err)
+		}
+	}
+
 	s.log.Debug(rid, "Ending registration for email=%s", req.Email)
 
 	return &RegisterResponse{
