@@ -160,3 +160,25 @@ During setup, the following technical hurdles were resolved:
 Access tokens contain the listener's persisted `tier` claim. Premium routes authorize only this signed claim; tier values supplied through headers or request bodies are ignored.
 
 After a subscription upgrade, the profile service returns a newly issued token pair containing the updated tier. Existing access tokens remain valid with their old tier claim until they expire, are refreshed, or are explicitly reissued.
+
+## Google OAuth2
+
+Configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URL`. Start authentication with `GET /auth/google`; Google redirects to `GET /auth/google/callback`. A successful callback returns the standard access and refresh token pair as JSON. Long-lived tokens are never placed in redirect query parameters.
+
+OAuth state is cryptographically random, stored in Redis only as a SHA-256 hash, expires after 10 minutes, and is consumed atomically on first callback use. Missing, invalid, expired, and replayed states are rejected.
+
+Only Google identities with a verified email are accepted. Existing Google-created accounts may sign in, but an email already attached to a local account returns `409 OAUTH_EMAIL_CONFLICT`; linking requires a separate authenticated flow. Google-created users store no password hash.
+
+## Internal gRPC profile API
+
+The identity service runs `identity.v1.IdentityService` on port `50051` alongside the HTTP server. `GetListenerProfile` accepts a listener UUID and returns the subscription tier, genre seeds, language preferences, followed artist IDs, and liked-song count.
+
+Docker Compose exposes port `50051` only to the internal Compose network; it is not published on the host. Other Compose services can connect to `identity-svc:50051`. Production deployments must authenticate callers with service identity or mTLS and must not expose this API publicly without equivalent access controls.
+
+Generate the checked-in Go client and server code reproducibly with:
+
+```bash
+make proto-gen
+```
+
+The target requires `protoc` 36.0 and installs pinned versions of `protoc-gen-go` and `protoc-gen-go-grpc`.

@@ -34,15 +34,21 @@ migrate-down:
 migrate-down-clean:
 	migrate -path migrations -database "$(DB_URL)" down -all
 
-# Requires protoc (https://github.com/protocolbuffers/protobuf/releases)
-# and protoc-gen-go (go install google.golang.org/protobuf/cmd/protoc-gen-go@latest)
-# on PATH.
+# Requires protoc (https://github.com/protocolbuffers/protobuf/releases).
+# Generator versions are pinned so checked-in output is reproducible.
 proto-gen:
-	protoc \
+	@test "$$(protoc --version)" = "libprotoc 36.0" || \
+		(echo "protoc 36.0 is required" && exit 1)
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+	PATH="$$(go env GOPATH)/bin:$$PATH" protoc \
 		-I proto \
 		--go_out=. \
 		--go_opt=module=github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper \
-		proto/identity/v1/events.proto
+		--go-grpc_out=. \
+		--go-grpc_opt=module=github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper \
+		proto/identity/v1/events.proto \
+		proto/identity.proto
 
 dev:
 	go run ./cmd/server

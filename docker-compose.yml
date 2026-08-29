@@ -68,6 +68,7 @@ services:
   identity-svc:
     build: ./music-identity-gatekeeper
     ports: ["8080:8080"]
+    expose: ["50051"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,3 +77,6 @@ services:
     environment:
       DB_URL: "postgres://muse:secret@postgres:5432/muse_identity?sslmode=disable"
       REDIS_ADDR: "redis:6379"
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+      GOOGLE_REDIRECT_URL: "${GOOGLE_REDIRECT_URL:-http://localhost:8080/auth/google/callback}"
