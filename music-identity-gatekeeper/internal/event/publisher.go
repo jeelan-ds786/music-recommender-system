@@ -58,7 +58,12 @@ func (p *KafkaPublisher) Ping(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			rid, _ := reqid.FromContext(ctx)
+			p.log.Error(rid, "failed to close Kafka connection after ping: %v", closeErr)
+		}
+	}()
 
 	if _, err := conn.ApiVersions(); err != nil {
 		return err
