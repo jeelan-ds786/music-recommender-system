@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -39,12 +40,17 @@ func (r *PostgresRepository) CreateUser(
 	VALUES ($1, $2, $3, $4)
 `
 
+	var passwordHash any
+	if user.HashedPassword != "" {
+		passwordHash = user.HashedPassword
+	}
+
 	_, err := r.db.Exec(
 		ctx,
 		query,
 		user.ID,
 		user.Email,
-		user.HashedPassword,
+		passwordHash,
 		user.AuthProvider,
 	)
 
@@ -70,6 +76,7 @@ func (r *PostgresRepository) GetByEmail(
 `
 
 	var user User
+	var passwordHash sql.NullString
 
 	err := r.db.QueryRow(
 		ctx,
@@ -78,7 +85,7 @@ func (r *PostgresRepository) GetByEmail(
 	).Scan(
 		&user.ID,
 		&user.Email,
-		&user.HashedPassword,
+		&passwordHash,
 		&user.AuthProvider,
 		&user.CreatedAt,
 		&user.UpdatedAt,
@@ -90,6 +97,9 @@ func (r *PostgresRepository) GetByEmail(
 		}
 
 		return nil, err
+	}
+	if passwordHash.Valid {
+		user.HashedPassword = passwordHash.String
 	}
 
 	return &user, nil
@@ -114,6 +124,7 @@ func (r *PostgresRepository) GetByID(
 `
 
 	var user User
+	var passwordHash sql.NullString
 
 	err := r.db.QueryRow(
 		ctx,
@@ -122,7 +133,7 @@ func (r *PostgresRepository) GetByID(
 	).Scan(
 		&user.ID,
 		&user.Email,
-		&user.HashedPassword,
+		&passwordHash,
 		&user.AuthProvider,
 		&user.CreatedAt,
 		&user.UpdatedAt,
@@ -134,6 +145,9 @@ func (r *PostgresRepository) GetByID(
 		}
 
 		return nil, err
+	}
+	if passwordHash.Valid {
+		user.HashedPassword = passwordHash.String
 	}
 
 	return &user, nil

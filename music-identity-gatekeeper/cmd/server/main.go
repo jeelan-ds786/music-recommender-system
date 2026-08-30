@@ -3,14 +3,18 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"google.golang.org/grpc"
 
 	"github.com/joho/godotenv"
 
@@ -19,8 +23,10 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/httplog"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
+	oauthflow "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/oauth"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/preference"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile/profilepb"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/refresh"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
@@ -52,6 +58,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer pool.Close()
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient, err := db.NewRedisClient(redisAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() { _ = redisClient.Close() }()
 
 	userRepo := user.NewRepository(pool)
 	refreshRepo := refresh.NewRepository(pool)
@@ -117,6 +133,18 @@ func main() {
 
 	authHandler := auth.NewHandler(authService)
 
+	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
+	googleClientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	googleRedirectURL := os.Getenv("GOOGLE_REDIRECT_URL")
+	if googleClientID == "" || googleClientSecret == "" || googleRedirectURL == "" {
+		log.Fatal("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URL are required")
+	}
+	oauthStates := oauthflow.NewStateManager(oauthflow.NewRedisStateStore(redisClient))
+	googleProvider := oauthflow.NewGoogleProvider(googleClientID, googleClientSecret, googleRedirectURL)
+	oauthAccounts := oauthflow.NewAccountRepository(pool)
+	oauthService := oauthflow.NewService(oauthStates, googleProvider, userRepo, oauthAccounts, profileRepo, tokenService)
+	oauthHandler := oauthflow.NewHandler(oauthService)
+
 	preferenceRepo := preference.NewRepository(pool)
 	profileService := profile.NewProfileService(profileRepo, preferenceRepo, userRepo, appLogger)
 	profileHandler := profile.NewHandler(profileService, appLogger)
@@ -132,6 +160,8 @@ func main() {
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
 		r.Post("/refresh", authHandler.Refresh)
+		r.Get("/google", oauthHandler.Begin)
+		r.Get("/google/callback", oauthHandler.Callback)
 	})
 
 	r.With(auth.AuthMiddleware(jwtService, appLogger)).Get("/me", profileHandler.Me)
@@ -144,9 +174,29 @@ func main() {
 	r.With(auth.AuthMiddleware(jwtService, appLogger)).Post("/me/following/artists/{artistID}", preferenceHandler.FollowArtist)
 	r.With(auth.AuthMiddleware(jwtService, appLogger)).Delete("/me/following/artists/{artistID}", preferenceHandler.UnfollowArtist)
 
-	log.Printf("server listening on :%s", port)
+	httpListener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	grpcListener, err := net.Listen("tcp", ":50051")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	if err := http.ListenAndServe(":"+port, r); err != nil {
+	httpServer := &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	grpcServer := grpc.NewServer()
+	profilepb.RegisterIdentityServiceServer(grpcServer, profile.NewGRPCServer(profileService))
+
+	shutdownContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	log.Printf("HTTP server listening on :%s", port)
+	log.Printf("internal gRPC server listening on :50051")
+	if err := serve(shutdownContext, httpServer, httpListener, grpcServer, grpcListener); err != nil {
 		log.Fatal(err)
 	}
 }
