@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
-	"os/signal"
 	"syscall"
 	"time"
 
