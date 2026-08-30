@@ -68,6 +68,11 @@ func (t *queryTracer) TraceQueryEnd(
 	t.log.Info(rid, "postgres %s %s in %s | args=%s | %s", td.op, data.CommandTag.String(), elapsed, args, td.sql)
 }
 
+// maxArgLen bounds how much of a single argument's formatted value is
+// logged, so a large JSON payload (or any other big []byte arg) doesn't
+// flood the log.
+const maxArgLen = 500
+
 func formatArgs(args []any) string {
 	if len(args) == 0 {
 		return "-"
@@ -75,10 +80,29 @@ func formatArgs(args []any) string {
 
 	parts := make([]string, len(args))
 	for i, a := range args {
-		parts[i] = fmt.Sprintf("$%d=%v", i+1, a)
+		parts[i] = fmt.Sprintf("$%d=%s", i+1, formatArg(a))
 	}
 
 	return strings.Join(parts, ", ")
+}
+
+// formatArg renders a single bound query argument for logging. []byte
+// args (e.g. a JSONB payload) are rendered as their string content via %s
+// instead of %v, which would otherwise print an unreadable decimal byte
+// dump like "[123 34 109 ...]".
+func formatArg(a any) string {
+	var s string
+	if b, ok := a.([]byte); ok {
+		s = string(b)
+	} else {
+		s = fmt.Sprintf("%v", a)
+	}
+
+	if len(s) > maxArgLen {
+		return s[:maxArgLen] + "...(truncated)"
+	}
+
+	return s
 }
 
 func operationOf(sql string) string {

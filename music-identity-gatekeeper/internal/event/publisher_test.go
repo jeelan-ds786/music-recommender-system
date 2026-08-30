@@ -131,3 +131,34 @@ func TestKafkaPublisher_ConnectsToLocalBroker(t *testing.T) {
 		t.Fatalf("Publish failed: %v", err)
 	}
 }
+
+// TestKafkaPublisher_Ping is an integration test with the same self-skip
+// pattern as TestKafkaPublisher_ConnectsToLocalBroker.
+func TestKafkaPublisher_Ping(t *testing.T) {
+	brokersEnv := os.Getenv("KAFKA_BROKERS")
+	if brokersEnv == "" {
+		t.Skip("KAFKA_BROKERS not set, skipping integration test")
+	}
+
+	publisher := NewKafkaPublisher(strings.Split(brokersEnv, ","), logger.New(logger.LevelNone))
+	t.Cleanup(func() { _ = publisher.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := publisher.Ping(ctx); err != nil {
+		t.Fatalf("Ping failed against a broker that should be reachable: %v", err)
+	}
+}
+
+func TestKafkaPublisher_Ping_UnreachableBrokerReturnsError(t *testing.T) {
+	publisher := NewKafkaPublisher([]string{"localhost:1"}, logger.New(logger.LevelNone))
+	t.Cleanup(func() { _ = publisher.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := publisher.Ping(ctx); err == nil {
+		t.Fatal("expected Ping to fail against an unreachable address, got nil")
+	}
+}

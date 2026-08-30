@@ -67,6 +67,7 @@ func newTestService(repo user.Repository) Service {
 		repo,
 		token.NewService(jwtService, fakeRefreshRepository{}, fakeTierProvider{tier: "free"}, logger.New(logger.LevelNone)),
 		logger.New(logger.LevelNone),
+		nil,
 	)
 }
 
