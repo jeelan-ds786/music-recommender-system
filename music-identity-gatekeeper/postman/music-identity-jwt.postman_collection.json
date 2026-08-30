@@ -1263,6 +1263,40 @@
           }
         }
       ]
+    },
+    {
+      "name": "28. Google OAuth - Begin (Manual, Opens Browser)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{migUrl}}/auth/google",
+          "host": [
+            "{{migUrl}}"
+          ],
+          "path": [
+            "auth",
+            "google"
+          ]
+        },
+        "description": "Cannot be scripted end-to-end: this redirects (302) to Google's real consent screen, and the callback needs a live Google account plus valid GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URL. To test manually: open this request's URL in a browser (not Postman's runner, so the redirect and Google login UI render), complete consent, and confirm the browser lands on GET /auth/google/callback?code=...&state=... with a 200 JSON response containing access_token/refresh_token. Automated coverage lives in internal/oauth/*_test.go (provider calls mocked)."
+      },
+      "protocolProfileBehavior": {
+        "followRedirects": false
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Begin OAuth redirects to Google (302) or reports 503 if state store is unreachable', function () {",
+              "    pm.expect([302, 503]).to.include(pm.response.code);",
+              "});"
+            ]
+          }
+        }
+      ]
     }
   ],
   "variable": [
