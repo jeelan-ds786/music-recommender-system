@@ -1,0 +1,546 @@
+openapi: 3.0.3
+info:
+  title: music-identity-gatekeeper
+  description: >
+    User identity and listener profile service (Epic 1). Covers every HTTP
+    route currently wired in cmd/server/main.go. The internal gRPC API
+    (identity.v1.IdentityService, port 50051) is documented in README.md —
+    OpenAPI doesn't model gRPC. POST /auth/logout is planned (E1-SS-06) but
+    not yet merged, so it is intentionally absent from this spec.
+  version: "0.1.0"
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+security: []
+
+tags:
+  - name: auth
+    description: Registration, login, token refresh, Google OAuth2
+  - name: profile
+    description: Listener profile
+  - name: preferences
+    description: Onboarding, likes, follows
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "400":
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: EMAIL_ALREADY_EXISTS }
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Log in with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Wrong password or unknown email (identical response either way — doesn't reveal which)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: INVALID_CREDENTIALS }
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate a refresh token for a new access/refresh pair
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: New token pair
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "400":
+          description: Missing refresh_token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          description: Refresh token invalid, expired, or already rotated (reuse of a revoked token)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: INVALID_REFRESH_TOKEN }
+
+  /auth/google:
+    get:
+      tags: [auth]
+      summary: Begin Google OAuth2 login
+      security: []
+      description: >
+        Redirects to Google's consent screen. A cryptographically random
+        CSRF state is generated and stored (hashed) in Redis with a
+        10-minute expiry.
+      responses:
+        "302":
+          description: Redirect to Google's authorization URL
+        "503":
+          description: OAuth temporarily unavailable (e.g. state store unreachable)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: OAUTH_UNAVAILABLE }
+
+  /auth/google/callback:
+    get:
+      tags: [auth]
+      summary: Google OAuth2 callback
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema: { type: string }
+        - name: state
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Authenticated (new or linked account)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "400":
+          description: Missing code, or state missing/invalid/expired/already used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: INVALID_OAUTH_CALLBACK }
+        "403":
+          description: Google account's email is not verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: OAUTH_EMAIL_UNVERIFIED }
+        "409":
+          description: Email already registered to a local (non-OAuth) account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: OAUTH_EMAIL_CONFLICT }
+        "502":
+          description: Google's token/userinfo endpoint failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: OAUTH_PROVIDER_ERROR }
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /me:
+    get:
+      tags: [profile]
+      summary: Get the authenticated user's full profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelope"
+              example:
+                data:
+                  account: { id: "9c9a...", email: "listener@example.com", created_at: "2026-08-24T10:00:00Z" }
+                  profile: { display_name: null, avatar_url: null, country: null, language: null, birth_year: null, updated_at: "2026-08-24T10:00:00Z" }
+                  tier: "free"
+                  preferences: { liked_song_ids: [], followed_artist_ids: [], genre_seeds: [], language_prefs: [] }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [profile]
+      summary: Partially update the authenticated user's profile
+      security: [{ bearerAuth: [] }]
+      description: >
+        Omitted fields are left unchanged (pointer-field patch semantics).
+        An explicit empty string DOES clear a field — encoding/json can't
+        distinguish "omitted" from "null" on a *string, so nil means
+        "don't touch" either way.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchMeRequest"
+      responses:
+        "200":
+          description: Updated profile (same shape as GET /me)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelope"
+        "400":
+          description: Invalid country (must be uppercase ISO 3166-1 alpha-2), birth_year, avatar_url, or display_name too long
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /me/onboarding:
+    post:
+      tags: [preferences]
+      summary: Complete onboarding (genre seeds, language preferences, optional artists to follow)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OnboardingRequest"
+      responses:
+        "200":
+          description: Onboarding completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelope"
+              example: { data: { status: onboarded } }
+        "400":
+          description: genre_seeds missing, empty, or more than 5
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Onboarding already completed for this user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: ONBOARDING_ALREADY_COMPLETED }
+
+  /me/likes/songs:
+    get:
+      tags: [preferences]
+      summary: List liked songs (cursor-paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: cursor
+          in: query
+          description: Opaque cursor from a previous response's next_cursor
+          schema: { type: string }
+      responses:
+        "200":
+          description: Page of liked songs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelope"
+              example:
+                data:
+                  items: [{ song_id: "3f2b...", liked_at: "2026-08-29T10:00:00Z" }]
+                  next_cursor: "MTc4Nz..."
+        "400":
+          description: Invalid limit or cursor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /me/likes/songs/{songID}:
+    post:
+      tags: [preferences]
+      summary: Like a song (idempotent)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SongID"
+      responses:
+        "200":
+          description: Liked (or already liked — same response either way)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelope"
+              example: { data: { status: liked } }
+        "400":
+          description: songID is not a valid UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: INVALID_SONG_ID }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [preferences]
+      summary: Unlike a song
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SongID"
+      responses:
+        "200":
+          description: Unliked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelope"
+              example: { data: { status: unliked } }
+        "400":
+          description: songID is not a valid UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: INVALID_SONG_ID }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Song was not liked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: LIKE_NOT_FOUND }
+
+  /me/following/artists/{artistID}:
+    post:
+      tags: [preferences]
+      summary: Follow an artist (idempotent)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ArtistID"
+      responses:
+        "200":
+          description: Followed (or already followed — same response either way)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelope"
+              example: { data: { status: followed } }
+        "400":
+          description: artistID is not a valid UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: INVALID_ARTIST_ID }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [preferences]
+      summary: Unfollow an artist
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ArtistID"
+      responses:
+        "200":
+          description: Unfollowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelope"
+              example: { data: { status: unfollowed } }
+        "400":
+          description: artistID is not a valid UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: INVALID_ARTIST_ID }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Artist was not followed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example: { error: FOLLOW_NOT_FOUND }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SongID:
+      name: songID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ArtistID:
+      name: artistID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Missing, malformed, expired, or invalid access token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example: { error: UNAUTHORIZED }
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example: { error: INTERNAL_SERVER_ERROR }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    ValidationError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            field: { type: string }
+
+    DataEnvelope:
+      description: >
+        The envelope used by /me, /me/onboarding, and /me/likes|following
+        routes: {"data": <payload>}. NOTE: /auth/* routes do NOT use this
+        envelope — they return the payload directly at the top level (see
+        RegisterResponse/TokenPair below). This inconsistency is real,
+        not a documentation error — auth/handler.go predates and doesn't
+        use internal/response's JSON()/Error() helpers.
+      type: object
+      properties:
+        data: {}
+      required: [data]
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 72 }
+
+    RegisterResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        tier: { type: string, example: free }
+        message: { type: string, example: user registered successfully }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+
+    PatchMeRequest:
+      type: object
+      description: All fields optional; omit a key to leave it unchanged.
+      properties:
+        display_name: { type: string, maxLength: 100, nullable: true }
+        avatar_url: { type: string, format: uri, maxLength: 2048, nullable: true }
+        country: { type: string, minLength: 2, maxLength: 2, description: "Uppercase ISO 3166-1 alpha-2, e.g. US", nullable: true }
+        language: { type: string, maxLength: 10, nullable: true }
+        birth_year: { type: integer, nullable: true }
+
+    OnboardingRequest:
+      type: object
+      required: [genre_seeds]
+      properties:
+        genre_seeds:
+          type: array
+          items: { type: string }
+          minItems: 1
+          maxItems: 5
+        language_prefs:
+          type: array
+          items: { type: string }
+        followed_artist_ids:
+          type: array
+          items: { type: string, format: uuid }
