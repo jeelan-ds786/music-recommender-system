@@ -86,7 +86,7 @@ func TestService_GetPreferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewService(tt.repo, logger.New(logger.LevelNone))
+			svc := NewService(tt.repo, logger.New(logger.LevelNone), nil)
 
 			got, err := svc.GetPreferences(context.Background(), userID)
 
@@ -113,7 +113,7 @@ func TestService_GetPreferences(t *testing.T) {
 }
 
 func TestService_LikeSong_PropagatesRepoError(t *testing.T) {
-	svc := NewService(&fakeRepository{err: errors.New("db down")}, logger.New(logger.LevelNone))
+	svc := NewService(&fakeRepository{err: errors.New("db down")}, logger.New(logger.LevelNone), nil)
 
 	err := svc.LikeSong(context.Background(), uuid.New(), uuid.New())
 	if err == nil {
@@ -122,7 +122,7 @@ func TestService_LikeSong_PropagatesRepoError(t *testing.T) {
 }
 
 func TestService_UnlikeSong_PropagatesNotFound(t *testing.T) {
-	svc := NewService(&fakeRepository{err: ErrLikeNotFound}, logger.New(logger.LevelNone))
+	svc := NewService(&fakeRepository{err: ErrLikeNotFound}, logger.New(logger.LevelNone), nil)
 
 	err := svc.UnlikeSong(context.Background(), uuid.New(), uuid.New())
 	if !errors.Is(err, ErrLikeNotFound) {
@@ -131,7 +131,7 @@ func TestService_UnlikeSong_PropagatesNotFound(t *testing.T) {
 }
 
 func TestService_FollowArtist_PropagatesRepoError(t *testing.T) {
-	svc := NewService(&fakeRepository{err: errors.New("db down")}, logger.New(logger.LevelNone))
+	svc := NewService(&fakeRepository{err: errors.New("db down")}, logger.New(logger.LevelNone), nil)
 
 	err := svc.FollowArtist(context.Background(), uuid.New(), uuid.New())
 	if err == nil {
@@ -140,7 +140,7 @@ func TestService_FollowArtist_PropagatesRepoError(t *testing.T) {
 }
 
 func TestService_UnfollowArtist_PropagatesNotFound(t *testing.T) {
-	svc := NewService(&fakeRepository{err: ErrFollowNotFound}, logger.New(logger.LevelNone))
+	svc := NewService(&fakeRepository{err: ErrFollowNotFound}, logger.New(logger.LevelNone), nil)
 
 	err := svc.UnfollowArtist(context.Background(), uuid.New(), uuid.New())
 	if !errors.Is(err, ErrFollowNotFound) {
@@ -149,7 +149,7 @@ func TestService_UnfollowArtist_PropagatesNotFound(t *testing.T) {
 }
 
 func TestService_Onboard_PropagatesAlreadyCompleted(t *testing.T) {
-	svc := NewService(&fakeRepository{err: ErrOnboardingAlreadyCompleted}, logger.New(logger.LevelNone))
+	svc := NewService(&fakeRepository{err: ErrOnboardingAlreadyCompleted}, logger.New(logger.LevelNone), nil)
 
 	err := svc.Onboard(context.Background(), uuid.New(), OnboardingRequest{GenreSeeds: []string{"pop"}})
 	if !errors.Is(err, ErrOnboardingAlreadyCompleted) {
@@ -159,7 +159,7 @@ func TestService_Onboard_PropagatesAlreadyCompleted(t *testing.T) {
 
 func TestService_ListLikedSongs_InvalidCursorRejectedBeforeRepo(t *testing.T) {
 	repo := &fakeRepository{err: errors.New("should not be called")}
-	svc := NewService(repo, logger.New(logger.LevelNone))
+	svc := NewService(repo, logger.New(logger.LevelNone), nil)
 
 	_, err := svc.ListLikedSongs(context.Background(), uuid.New(), "not-a-valid-cursor", 20)
 	if !errors.Is(err, ErrInvalidCursor) {
@@ -175,7 +175,7 @@ func TestService_ListLikedSongs_BuildsNextCursor(t *testing.T) {
 		items: []LikedSong{{SongID: songID, CreatedAt: createdAt}},
 		next:  &Cursor{ID: songID, CreatedAt: createdAt},
 	}
-	svc := NewService(repo, logger.New(logger.LevelNone))
+	svc := NewService(repo, logger.New(logger.LevelNone), nil)
 
 	page, err := svc.ListLikedSongs(context.Background(), uuid.New(), "", 1)
 	if err != nil {

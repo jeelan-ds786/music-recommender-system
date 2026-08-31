@@ -8,6 +8,7 @@ package event
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/segmentio/kafka-go"
@@ -27,8 +28,9 @@ type Publisher interface {
 // setting kafka.Message.Topic per call is kafka-go's supported way to
 // share a single writer across topics instead of needing one per topic.
 type KafkaPublisher struct {
-	writer *kafka.Writer
-	log    *logger.Logger
+	writer  *kafka.Writer
+	log     *logger.Logger
+	brokers []string
 }
 
 func NewKafkaPublisher(brokers []string, log *logger.Logger) *KafkaPublisher {
@@ -37,8 +39,37 @@ func NewKafkaPublisher(brokers []string, log *logger.Logger) *KafkaPublisher {
 			Addr:     kafka.TCP(brokers...),
 			Balancer: &kafka.LeastBytes{},
 		},
-		log: log,
+		log:     log,
+		brokers: brokers,
 	}
+}
+
+// Ping performs one real round-trip to a broker (dial + ApiVersions) to
+// confirm connectivity. Used only for a startup log line — a failure here
+// does not (and should not) prevent the server from starting, since the
+// outbox/relay design exists specifically to tolerate Kafka being
+// temporarily unreachable.
+func (p *KafkaPublisher) Ping(ctx context.Context) error {
+	if len(p.brokers) == 0 {
+		return fmt.Errorf("no brokers configured")
+	}
+
+	conn, err := kafka.DialContext(ctx, "tcp", p.brokers[0])
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			rid, _ := reqid.FromContext(ctx)
+			p.log.Error(rid, "failed to close Kafka connection after ping: %v", closeErr)
+		}
+	}()
+
+	if _, err := conn.ApiVersions(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *KafkaPublisher) Publish(

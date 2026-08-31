@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 )
@@ -24,14 +25,16 @@ type Service interface {
 }
 
 type service struct {
-	repo Repository
-	log  *logger.Logger
+	repo    Repository
+	log     *logger.Logger
+	emitter *event.Emitter
 }
 
-func NewService(repo Repository, log *logger.Logger) Service {
+func NewService(repo Repository, log *logger.Logger, emitter *event.Emitter) Service {
 	return &service{
-		repo: repo,
-		log:  log,
+		repo:    repo,
+		log:     log,
+		emitter: emitter,
 	}
 }
 
@@ -78,6 +81,12 @@ func (s *service) Onboard(
 
 	s.log.Info(rid, "Ending Onboard for user_id=%s", userID)
 
+	if s.emitter != nil {
+		if emitErr := s.emitter.EmitUserPreferenceUpdated(ctx, nil, userID.String()); emitErr != nil {
+			s.log.Error(rid, "failed to enqueue user.preference.updated event: %v", emitErr)
+		}
+	}
+
 	return nil
 }
 
@@ -98,6 +107,12 @@ func (s *service) LikeSong(
 
 	s.log.Info(rid, "Ending LikeSong for user_id=%s song_id=%s (song liked)", userID, songID)
 
+	if s.emitter != nil {
+		if emitErr := s.emitter.EmitUserPreferenceUpdated(ctx, nil, userID.String()); emitErr != nil {
+			s.log.Error(rid, "failed to enqueue user.preference.updated event: %v", emitErr)
+		}
+	}
+
 	return nil
 }
 
@@ -117,6 +132,12 @@ func (s *service) UnlikeSong(
 	}
 
 	s.log.Info(rid, "Ending UnlikeSong for user_id=%s song_id=%s (song unliked)", userID, songID)
+
+	if s.emitter != nil {
+		if emitErr := s.emitter.EmitUserPreferenceUpdated(ctx, nil, userID.String()); emitErr != nil {
+			s.log.Error(rid, "failed to enqueue user.preference.updated event: %v", emitErr)
+		}
+	}
 
 	return nil
 }
@@ -200,6 +221,12 @@ func (s *service) FollowArtist(
 
 	s.log.Info(rid, "Ending FollowArtist for user_id=%s artist_id=%s (artist followed)", userID, artistID)
 
+	if s.emitter != nil {
+		if emitErr := s.emitter.EmitUserPreferenceUpdated(ctx, nil, userID.String()); emitErr != nil {
+			s.log.Error(rid, "failed to enqueue user.preference.updated event: %v", emitErr)
+		}
+	}
+
 	return nil
 }
 
@@ -219,6 +246,12 @@ func (s *service) UnfollowArtist(
 	}
 
 	s.log.Info(rid, "Ending UnfollowArtist for user_id=%s artist_id=%s (artist unfollowed)", userID, artistID)
+
+	if s.emitter != nil {
+		if emitErr := s.emitter.EmitUserPreferenceUpdated(ctx, nil, userID.String()); emitErr != nil {
+			s.log.Error(rid, "failed to enqueue user.preference.updated event: %v", emitErr)
+		}
+	}
 
 	return nil
 }

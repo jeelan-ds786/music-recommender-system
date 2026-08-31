@@ -1,4 +1,6 @@
 venv/
+# --- AI Shared Memory (local only) ---
+Docs/
 # --- Claude Code local tooling ---
 .claude/
 # --- Environment Files ---

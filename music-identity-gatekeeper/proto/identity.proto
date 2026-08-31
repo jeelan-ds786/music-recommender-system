@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package identity.v1;
+
+option go_package = "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile/profilepb;profilepb";
+
+service IdentityService {
+  rpc GetListenerProfile(GetListenerProfileRequest) returns (GetListenerProfileResponse);
+}
+
+message GetListenerProfileRequest {
+  string user_id = 1;
+}
+
+message GetListenerProfileResponse {
+  string user_id = 1;
+  string tier = 2;
+  repeated string genre_seeds = 3;
+  repeated string language_preferences = 4;
+  repeated string followed_artist_ids = 5;
+  int32 liked_song_count = 6;
+}

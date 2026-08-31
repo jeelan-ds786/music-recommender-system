@@ -113,8 +113,28 @@ Essential for build performance and security, it prevents sensitive local files 
 We adopted the **12-Factor App methodology** to ensure the service is portable across environments.
 
 * **Viper**: Used to load configuration values. It prioritizes Environment Variables (best for production/Kubernetes) over local `.env` files (best for development).
-* **`.env.example`**: Provided as a template to document required keys (`DB_URL`, `REDIS_URL`, `JWT_SECRET`, `PORT`) without committing sensitive data.
+* **`.env.example`**: Provided as a template to document required keys without committing sensitive data — see the full list below.
 * **`.gitignore`**: Configured to exclude secret files (`.env`), build artifacts, and IDE metadata, ensuring a clean and secure repository.
+
+### Environment variables
+
+Loaded from `.env` in local development (via `godotenv`, `cmd/server`'s entry
+point) or real environment variables in production/Docker. `cmd/server` is
+the actual running service (`make dev` / what `docker-compose.yml`'s
+`identity-svc` is meant to run); `cmd/api` is an earlier, minimal stub
+entry point that only checks DB/Redis connectivity and prints a message —
+it doesn't serve any routes.
+
+| Variable | Required | Default | Used by | Description |
+|---|---|---|---|---|
+| `DB_URL` | Yes | — | `cmd/server`, `cmd/api` | PostgreSQL connection string, e.g. `postgres://user:pass@host:5432/dbname?sslmode=disable`. |
+| `JWT_SECRET` | Yes | — | `cmd/server` | HMAC signing secret for access/refresh JWTs. The server calls `log.Fatal` at startup if this is unset. |
+| `PORT` | No | `8080` | `cmd/server` | HTTP port the service listens on. |
+| `LOG_LEVEL` | No | `info` | `cmd/server` | One of `debug`, `info`, `error`, `none`/`off` (case-insensitive). Any unrecognized value also falls back to `info`. |
+| `KAFKA_BROKERS` | No | unset | `cmd/server` | Comma-separated Kafka broker addresses, e.g. `localhost:9094`. When unset, the service still runs fine — outbox events are enqueued to `kafka_integration` as usual but published via a `NoopPublisher` (discarded) instead of a real broker. |
+| `KAFKA_RELAY_ENABLED` | No | `true` | `cmd/server` | On/off switch for the background outbox relay — the job that periodically drains `kafka_integration` and publishes pending events to Kafka. Strict boolean via Go's `strconv.ParseBool`: accepts `1`/`t`/`T`/`TRUE`/`true`/`True` (on) or `0`/`f`/`F`/`FALSE`/`false`/`False` (off). Unset or any other value falls back to `true` (logged as an error if a value was actually supplied and didn't parse). |
+| `KAFKA_RELAY_INTERVAL` | No | `1m` | `cmd/server` | How often the relay wakes up to drain pending outbox events. A Go duration string, e.g. `30s`, `1m`, `2m`, `5m`. Unparseable or non-positive values fall back to `1m` (logged as an error) rather than being used as-is. |
+| `REDIS_URL` | No | — | `cmd/api` only | Redis connection address, e.g. `localhost:6379`. Only read by the legacy `cmd/api` stub — `cmd/server` (the real service) doesn't use Redis at all currently. |
 
 ---
 
@@ -168,3 +188,17 @@ Configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URL`.
 OAuth state is cryptographically random, stored in Redis only as a SHA-256 hash, expires after 10 minutes, and is consumed atomically on first callback use. Missing, invalid, expired, and replayed states are rejected.
 
 Only Google identities with a verified email are accepted. Existing Google-created accounts may sign in, but an email already attached to a local account returns `409 OAUTH_EMAIL_CONFLICT`; linking requires a separate authenticated flow. Google-created users store no password hash.
+
+## Internal gRPC profile API
+
+The identity service runs `identity.v1.IdentityService` on port `50051` alongside the HTTP server. `GetListenerProfile` accepts a listener UUID and returns the subscription tier, genre seeds, language preferences, followed artist IDs, and liked-song count.
+
+Docker Compose exposes port `50051` only to the internal Compose network; it is not published on the host. Other Compose services can connect to `identity-svc:50051`. Production deployments must authenticate callers with service identity or mTLS and must not expose this API publicly without equivalent access controls.
+
+Generate the checked-in Go client and server code reproducibly with:
+
+```bash
+make proto-gen
+```
+
+The target requires `protoc` 36.0 and installs pinned versions of `protoc-gen-go` and `protoc-gen-go-grpc`.
