@@ -1,443 +1,297 @@
-# Epic 2 — Four-Day Sprint
+# Epic 2 Sprint 1 — Six-Day Combined Sprint
 
-**Goal:** Build and release the core Music Catalog Management Service — schema, CRUD, browse, events, and gRPC — in four days with two developers.
+**Goal:** Close out Epic 1's remaining work (Phase 1, Days 1-2), then build and release the core Music Catalog Management Service (Phase 2, Days 3-6).
 
 **Team:** Developer A and Developer B
-**Capacity assumption:** 6-8 focused hours per developer per day, with Day 4 run as a combined integration/release day (see below)
-**Sprint length:** 4 consecutive days
-**Release target:** `v0.2.0`
+**Capacity assumption:** 6-8 focused hours per developer per day
+**Sprint length:** 6 consecutive days
+**Release targets:** `v0.1.0` (end of Day 2), then `v0.2.0` (end of Day 6)
+
+> There is no separate "Epic 1 Sprint 2" anymore — its remaining tickets
+> now run as Phase 1 of this sprint, per your direction. This is the one
+> authoritative plan.
 
 ---
 
-## Scope note: this is a compressed sprint, not the full epic
+## E1-SS-06 and E1-SS-12: resolved, not scheduled work
 
-This was originally scoped as a seven-day, 13-ticket sprint (schema →
-CRUD → browse → bulk import → Kafka → gRPC → observability → docs → E2E).
-Compressed to four days, three lower-priority tickets don't fit and are
-**deferred to an Epic 2 Sprint 2**, the same way Epic 1 needed a Sprint 2
-to finish logout, observability, docs, and playlists after its own
-seven-day sprint:
+Neither ticket consumes any developer time in this sprint — both are
+merge-only at this point:
 
-- **E2-SS-07** — Bulk catalog import / admin ingestion pipeline (P1)
-- **E2-SS-11** — Full metrics, structured logging, and health depth (P1)
-- **E2-SS-12** — Full README/OpenAPI/Postman/architecture-diagram documentation (P1)
+**E1-SS-06 — actually resolved.** All 6 real conflicts (`Makefile`,
+`cmd/server/main.go`, `internal/auth/middleware.go`,
+`internal/preference/service.go` + test, `internal/token/service.go`)
+are fixed, committed as a merge commit on local branch
+`fix/e1-ss-06-resolve-conflicts` (`5a83591`, based on `main`). Verified:
+`go build ./...`, `go vet ./...`, and `go test -race ./...` all pass,
+including the DB-backed tests against a real local Postgres (previously
+these could only be checked for conflicts, not correctness). Also ran a
+live smoke test: register → login → `GET /me` (200) → logout (204) →
+`GET /me` with the same access token (401 `REVOKED_ACCESS_TOKEN`) →
+refresh with the same refresh token (401). Redis blacklist TTL measured
+at 882s, correctly under the access token's 900s lifetime. No raw token
+appeared in logs.
+**Not yet merged into `main` or pushed to `origin`** — say the word and
+I'll do either or both; I stopped short of pushing/merging on my own
+since that touches shared state.
 
-These are genuinely deferred, not dropped — their ticket numbers are
-reserved and will carry their original scope into Epic 2 Sprint 2 once
-that's planned. This sprint ships the P0 core: schema, CRUD, browse,
-Kafka events, and gRPC, plus a minimal README stub and a basic health
-check so the service is usable and demoable, just not fully observable or
-bulk-seedable yet.
+**E1-SS-12 — done, pending merge.** `chore/Doc` is verified clean (zero
+conflicts against `main`). It just needs pushing to `origin` and merging
+via PR — no further work or discussion needed.
 
 ---
 
-## Starting point
+## Remaining Epic 1 tickets (moved into this sprint as Phase 1)
 
-This is a new, greenfield service — unlike Epic 1, nothing exists in the
-repository for it yet. It reuses proven patterns and shared local
-infrastructure from Epic 1's `music-identity-gatekeeper` rather than
-inventing new ones:
+Two tickets per developer, apart from the two above:
 
-- The same Go / `chi` / `pgx/v5` / `golang-migrate` / `segmentio/kafka-go` /
-  `google.golang.org/grpc` stack (`zap` and `prometheus/client_golang`
-  arrive with the deferred E2-SS-11 in Sprint 2).
-- The same repo-root `docker-compose.yml` — Postgres, Kafka, and
-  `kafka-init` are already running for Epic 1. This sprint adds a
-  `catalog-svc` service block and a second Postgres database
-  (`muse_catalog`), and extends `kafka-init` with one new topic. It does
-  not stand up a second broker or duplicate infrastructure.
-- The same handler → service → repository layering, `response.JSON` /
-  `response.Error` / `response.ValidationError` error-shape convention.
-- The same transactional-outbox Kafka publishing design proven in
-  E1-SS-09 (enqueue durably, one direct publish attempt, background relay
-  as fallback) — reimplemented in this service, not shared as a library.
+- **Developer A:** E1-SS-11 (metrics/logging/health), E1-SS-13 (Epic 1 end-to-end test, CI, and release `v0.1.0` — release captain)
+- **Developer B:** E1-SS-14 (playlist schema + CRUD), E1-SS-15 (playlist events)
 
-This sprint builds the catalog domain (artists, albums, songs), its
-public read / admin-protected write HTTP API, Kafka event publishing, and
-an internal gRPC API that later epics (Feature Store, Candidate
-Generation, Search & Discovery) will consume.
+This is real remaining work — the 3-day estimate from the old separate
+plan shrinks to about 2 days now that 06 and 12 no longer occupy Day 1.
 
-**Explicitly out of scope for this sprint** (beyond the three deferred
-tickets above): full-text or semantic search (Epic 12), audio feature
-extraction / embeddings (Epic 6), popularity scoring from real listening
-behavior (Epic 13), and any consumer of the Kafka events this service
-publishes.
+---
+
+## Starting point for Phase 2 (Epic 2)
+
+Greenfield service, reusing Epic 1's proven patterns rather than
+inventing new ones — same stack (Go / `chi` / `pgx/v5` / `golang-migrate`
+/ `segmentio/kafka-go` / `google.golang.org/grpc`), same repo-root
+`docker-compose.yml` (adds a `catalog-svc` block + `muse_catalog`
+database), same handler → service → repository layering and error-shape
+conventions, same transactional-outbox Kafka publishing design proven in
+E1-SS-09 (reimplemented, not shared as a library).
+
+**Deferred to a future Epic 2 Sprint 2** (unchanged from the prior draft,
+scope preserved, not dropped): E2-SS-07 (bulk import), E2-SS-11 (full
+observability), E2-SS-12 (full docs/OpenAPI/Postman/diagram).
 
 ---
 
 ## Recommended ownership
 
-### Developer A — Runtime, authorization, and service-interface owner
+### Developer A
+- Phase 1: E1-SS-11, release-captain E1-SS-13
+- Phase 2: E2-SS-02, E2-SS-04, E2-SS-06, E2-SS-10, release-captain E2-SS-13
+- Shared integration files: `cmd/server/main.go`, `go.mod`, `go.sum`, `catalog-svc`'s block in root `docker-compose.yml`
 
-- Service scaffolding and admin-key authorization middleware
-- Album CRUD and artist-album linking
-- Catalog browse/filter/pagination API
-- Internal gRPC catalog API
-- Release integration on Day 4
-- Shared integration files such as `cmd/server/main.go`, the
-  `catalog-svc` block in the root `docker-compose.yml`, and final
-  dependency reconciliation
-
-### Developer B — Catalog domain and event owner
-
-- Catalog schema (migrations) and domain repositories
-- Artist CRUD and full read API
-- Song CRUD and catalog metadata
-- Kafka catalog event schema, publisher, and event publishing
-- Kafka topic additions to the root `docker-compose.yml`
-
-Same shape and shared-file rule as Epic 1 and as this sprint's original
-seven-day draft: B exposes constructors and handlers; A wires them into
-the server. A is the merge owner for `cmd/server/main.go`, `go.mod`, and
-`go.sum`; B owns migrations, event Protobuf definitions, and the
-`catalog-svc`/Kafka-topic additions to `docker-compose.yml`.
+### Developer B
+- Phase 1: E1-SS-14, E1-SS-15, pair on E1-SS-13
+- Phase 2: E2-SS-01, E2-SS-03, E2-SS-05, E2-SS-08, E2-SS-09
+- Migrations, event Protobuf definitions, Kafka/Docker Compose additions
 
 ---
 
-## Definition of Done (for this four-day sprint)
+## Definition of Done
 
-- All HTTP endpoints for artists, albums, songs, and browse/filter are implemented
-- Every catalog mutation is protected by the admin key; every read endpoint is public
-- Artist/album/song relationships are enforced with real foreign keys, not just documented convention
-- `catalog.entity.updated` is published for every successful create, update, and delete
-- gRPC `GetArtist`, `GetSong`, and `BatchGetSongs` work on the internal gRPC port
-- A basic `/health/live` and `/health/ready` exist (full `/metrics` depth is Sprint 2's E2-SS-11)
-- `go test ./...`, `go vet ./...`, Docker build, migrations, and a basic end-to-end smoke test pass
-- A minimal README (quick start + env vars) exists so the service is runnable (full OpenAPI/Postman/diagram is Sprint 2's E2-SS-12)
-- The release is tagged `v0.2.0` only after the release branch is green
+**Phase 1 (Epic 1 fully complete, matching EPICS.md):**
+- Logout revokes both tokens; blacklisted access tokens rejected (already verified above)
+- `/metrics`, `/health/live`, `/health/ready` live with structured JSON logs
+- Playlists: create/read/update/delete + add/remove songs, ownership-scoped, idempotent
+- `playlist.updated` published on every playlist mutation
+- README/OpenAPI/Postman reflect logout and playlists
+- `v0.1.0` tagged only after a green release branch
 
-**Not required for this sprint's Definition of Done** (see Sprint 2):
-bulk import, full Prometheus metrics, full structured logging, OpenAPI
-spec, Postman collection, architecture diagram.
+**Phase 2 (Epic 2 core):**
+- Artist/album/song CRUD, browse/filter, real FKs enforced
+- Every mutation admin-key protected; every read public
+- `catalog.entity.updated` published on every mutation
+- gRPC `GetArtist`/`GetSong`/`BatchGetSongs` work internally
+- Basic health check + minimal README (full observability/docs are Epic 2 Sprint 2)
+- `v0.2.0` tagged only after a green release branch
 
 ---
 
-# Tickets
+# Phase 1 — Epic 1 Remaining Work (Days 1-2)
+
+## E1-SS-11 — Metrics, structured logging, and health
+
+**Owner:** A | **Priority:** P1 | **Estimate:** 8 hours | **Dependencies:** E1-SS-09, E1-SS-10 (merged) | **Merge position:** 1
+
+Request-ID middleware, zap JSON logging (request ID, user ID, method, route, status, latency), Prometheus request/latency/DB-pool/Kafka-error metrics, `/metrics`, `/health/live`, `/health/ready`.
+
+**Acceptance:** no secrets/tokens in logs; metrics labels bounded; readiness fails when Postgres is down; one request produces one structured completion log.
+
+---
+
+## E1-SS-14 — Playlist schema, domain contracts, and CRUD
+
+**Owner:** B | **Priority:** P0 | **Estimate:** 8 hours | **Dependencies:** E1-SS-03 (merged) | **Merge position:** 2
+
+- Migration `000008_create_playlists` (`id`, `user_id` FK cascade, `name`, `description`, `is_public`, timestamps).
+- Migration `000009_create_playlist_songs` (`playlist_id` FK cascade, `song_id` — no local FK, cross-service reference like `liked_songs.song_id` — `position`, `added_at`; PK `(playlist_id, song_id)`; unique index on `(playlist_id, position)`).
+- `internal/playlist`: model/repository/service/handler/validator, same layering as `internal/preference`.
+- `POST/GET /me/playlists`, `GET/PATCH/DELETE /me/playlists/{id}` (pointer-field patch), `POST/DELETE /me/playlists/{id}/songs/{songID}` (idempotent append, 404 on missing remove).
+- Ownership check returns `404` (not `403`) for a non-owned playlist. Arbitrary reordering out of scope.
+
+**Acceptance:** non-owner gets `404`; duplicate add is idempotent; missing remove is `404`; invalid UUIDs are `400`; both migrations apply/roll back cleanly on top of `000001`-`000007`.
+
+---
+
+## E1-SS-15 — Publish playlist events
+
+**Owner:** B | **Priority:** P0 | **Estimate:** 4 hours (pure reuse) | **Dependencies:** E1-SS-14, E1-SS-09 (merged) | **Merge position:** 3
+
+`PlaylistUpdated` Protobuf message (standard envelope + `playlist_id` + `operation`), new topic `user.playlist.updated`, `Emitter.EmitPlaylistUpdated` called from `internal/playlist`'s service after every mutation. No new publishing architecture.
+
+**Acceptance:** every mutation emits exactly one event with the correct `operation`; failed mutations emit none; unit tests use the existing fake publisher; integration test proves delivery.
+
+---
+
+## E1-SS-13 — End-to-end test, CI, and release `v0.1.0`
+
+**Owner:** A as release captain; B pairs | **Priority:** P0 | **Estimate:** 8 hours | **Dependencies:** E1-SS-06 (merge only), E1-SS-11, E1-SS-12 (merge only), E1-SS-14, E1-SS-15 | **Merge position:** 4, closes Phase 1
+
+Extended E2E: migrate → register/login → profile GET/PATCH → onboarding → like/follow → playlist create/add-song/remove-song → verify playlist events → gRPC profile call → logout → verify token rejection. Update README/OpenAPI/Postman for logout and playlists. CI green, migration up/down through `000009`, tag `v0.1.0`.
+
+**Acceptance:** CI green from clean checkout; smoke test (incl. playlists, logout) passes twice; OpenAPI/Postman include logout and every playlist endpoint; tag points to the exact green commit.
+
+---
+
+# Phase 2 — Epic 2 Catalog Core (Days 3-6)
 
 ## E2-SS-01 — Catalog schema and domain contracts
 
-**Owner:** B
-**Priority:** P0
-**Estimate:** 6 hours
-**Dependencies:** None
-**Merge position:** 1
+**Owner:** B | **Priority:** P0 | **Estimate:** 6 hours | **Dependencies:** None | **Merge position:** 5
 
-### Work
+Migrations `000001_create_artists`, `000002_create_albums`, `000003_create_songs` (`genre_tags`/`mood_tags` arrays with GIN indexes, `acoustic_features JSONB` reserved for Epic 6, `external_id` reserved for Sprint 2's bulk import), `000004_create_song_featured_artists` (normalized join table, not an array). `internal/artist`, `internal/album`, `internal/song` domain models/repositories/services, no transport imports.
 
-- Add migration `000001_create_artists`: `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`, `name TEXT NOT NULL`, `bio TEXT`, `image_url TEXT`, `popularity_score INT NOT NULL DEFAULT 0`, `external_id TEXT UNIQUE` (nullable — reserved for Sprint 2's bulk-import idempotency), `created_at`/`updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`.
-- Add migration `000002_create_albums`: `id UUID PRIMARY KEY`, `artist_id UUID NOT NULL REFERENCES artists(id) ON DELETE CASCADE`, `title TEXT NOT NULL`, `release_year INT`, `cover_url TEXT`, `album_type TEXT NOT NULL DEFAULT 'album'`, `external_id TEXT UNIQUE`, timestamps. Index on `artist_id`.
-- Add migration `000003_create_songs`: `id UUID PRIMARY KEY`, `title TEXT NOT NULL`, `primary_artist_id UUID NOT NULL REFERENCES artists(id)`, `album_id UUID REFERENCES albums(id) ON DELETE SET NULL`, `duration_ms INT NOT NULL`, `genre_tags TEXT[] NOT NULL DEFAULT '{}'`, `mood_tags TEXT[] NOT NULL DEFAULT '{}'`, `release_year INT`, `popularity_score INT NOT NULL DEFAULT 0`, `explicit BOOLEAN NOT NULL DEFAULT false`, `isrc TEXT UNIQUE`, `acoustic_features JSONB NOT NULL DEFAULT '{}'` (reserved for Epic 6), `external_id TEXT UNIQUE`, timestamps. GIN indexes on `genre_tags` and `mood_tags`; btree index on `(popularity_score DESC, id DESC)`; index on `primary_artist_id` and `album_id`.
-- Add migration `000004_create_song_featured_artists`: `song_id`/`artist_id` FKs, `PRIMARY KEY (song_id, artist_id)` — a normalized many-to-many table, not an array column (same lesson as Epic 1's E1-SS-05).
-- All four migrations reversible.
-- Define `internal/artist`, `internal/album`, and `internal/song` domain models, repository interfaces, and service interfaces. No HTTP, Kafka, or gRPC imports.
-
-### Acceptance criteria
-
-- All four migrations apply and roll back cleanly on a fresh `muse_catalog` database.
-- A song can be created referencing an existing artist and album; creating one against a nonexistent artist fails at the database level.
-- Domain contracts compile with no HTTP/Kafka/gRPC imports.
-- `go test ./...` passes.
+**Acceptance:** migrations apply/roll back cleanly; nonexistent-artist song creation fails at the DB level; `go test ./...` passes.
 
 ---
 
 ## E2-SS-02 — Service scaffolding and admin authorization
 
-**Owner:** A
-**Priority:** P0
-**Estimate:** 7 hours
-**Dependencies:** None
-**Merge position:** 2; may be reviewed in parallel with E2-SS-01
+**Owner:** A | **Priority:** P0 | **Estimate:** 7 hours | **Dependencies:** None | **Merge position:** 6
 
-### Work
+`cmd/server/main.go`, `internal/response`, `internal/db` (copy Epic 1's shapes). Dockerfile, `catalog-svc` + `muse_catalog` in root `docker-compose.yml`. `ADMIN_API_KEY`/`X-Admin-Key` write authorization (not JWTs — catalog writes are operator/ETL actions). All `GET`s public. Basic `/health/live`, `/health/ready`.
 
-- Initialize the service (`cmd/server/main.go`, `internal/response`, `internal/db` — copy the shapes proven in `music-identity-gatekeeper`, not a shared import). Basic `log`-package logging is fine for now; `zap` arrives with Sprint 2's E2-SS-11.
-- Add a Dockerfile (multi-stage, distroless runtime, matching Epic 1's pattern) and a `catalog-svc` block in the root `docker-compose.yml`, plus a `muse_catalog` database on the existing `postgres` container.
-- Implement `ADMIN_API_KEY`-based write authorization: mutations are protected by a static key checked via an `X-Admin-Key` header with a constant-time comparison — not by reusing `music-identity-gatekeeper`'s end-user JWTs, since catalog writes are operator/ETL actions, not end-user actions. All `GET` endpoints stay public.
-- Add basic `/health/live` and `/health/ready` (Postgres check, short timeout) — full metrics depth is Sprint 2.
-- Table-driven tests: missing/incorrect/well-formed `X-Admin-Key`, health endpoint behavior when Postgres is down.
-
-### Acceptance criteria
-
-- The server boots with only placeholder env vars set and `/health/live` returns `200`.
-- A mutation route protected by `AdminKeyMiddleware` returns a structured `401` for a missing or incorrect key, and passes through for a correct one.
-- No read route requires the admin key.
-- `go vet ./...` and `go test -race ./...` pass.
+**Acceptance:** boots with placeholder env vars; `AdminKeyMiddleware` returns `401` for missing/incorrect key; `go vet`/`go test -race` pass.
 
 ---
 
 ## E2-SS-03 — Artist CRUD and full read API
 
-**Owner:** B
-**Priority:** P0
-**Estimate:** 6 hours
-**Dependencies:** E2-SS-01
-**Merge position:** 3
+**Owner:** B | **Priority:** P0 | **Estimate:** 6 hours | **Dependencies:** E2-SS-01 | **Merge position:** 7
 
-### Work
+Full CRUD, public reads, admin-key writes, pointer-field patch, cascading delete documented as destructive.
 
-- Implement `internal/artist`'s repository (Postgres) and service.
-- `POST /artists` (admin key) — create; `name` required and non-empty.
-- `GET /artists/{id}` — full public read.
-- `GET /artists` — paginated public list, sortable by `name` or `popularity_score`.
-- `PATCH /artists/{id}` (admin key) — pointer-field patch, same pattern as Epic 1's `PATCH /me`.
-- `DELETE /artists/{id}` (admin key) — hard delete; document that it cascades to albums and songs.
-- Handler and repository tests.
-
-### Acceptance criteria
-
-- Unauthenticated `GET` succeeds; unauthenticated `POST`/`PATCH`/`DELETE` return structured `401`.
-- Invalid UUID → `400`; missing artist → structured `404`.
-- Patching one field does not change any omitted field.
-- Repository queries are parameterized.
+**Acceptance:** 401/400/404 patterns match Epic 1's conventions; parameterized queries.
 
 ---
 
 ## E2-SS-04 — Album CRUD and artist-album linking
 
-**Owner:** A
-**Priority:** P0
-**Estimate:** 6 hours
-**Dependencies:** E2-SS-01, E2-SS-03
-**Merge position:** 4
+**Owner:** A | **Priority:** P0 | **Estimate:** 6 hours | **Dependencies:** E2-SS-01, E2-SS-03 | **Merge position:** 8
 
-### Work
+`POST /albums` validates `artist_id` exists (structured `404`, not a raw FK error); `GET /artists/{id}/albums` paginated.
 
-- Implement `internal/album`'s repository and service.
-- `POST /albums` (admin key) — requires `artist_id`; validate it exists at the service layer, return `404 ARTIST_NOT_FOUND` rather than a raw FK error.
-- `GET /albums/{id}` — public full read.
-- `GET /artists/{id}/albums` — public, paginated, ordered by `release_year DESC`.
-- `PATCH /albums/{id}`, `DELETE /albums/{id}` (admin key).
-- Validate `release_year` is a plausible four-digit year.
-
-### Acceptance criteria
-
-- Creating an album against a nonexistent artist returns `404 ARTIST_NOT_FOUND`.
-- `GET /artists/{id}/albums` paginates with no duplicates or omissions.
-- Same auth/validation acceptance shape as E2-SS-03.
+**Acceptance:** same shape as E2-SS-03.
 
 ---
 
 ## E2-SS-05 — Song CRUD and catalog metadata
 
-**Owner:** B
-**Priority:** P0
-**Estimate:** 7 hours
-**Dependencies:** E2-SS-01, E2-SS-03, E2-SS-04
-**Merge position:** 5
+**Owner:** B | **Priority:** P0 | **Estimate:** 7 hours | **Dependencies:** E2-SS-01, E2-SS-03, E2-SS-04 | **Merge position:** 9
 
-### Work
+Full CRUD incl. `song_featured_artists` join-table writes; `genre_tags`/`mood_tags` capped at 5; `popularity_score` read-only (a later epic owns writing it).
 
-- Implement `internal/song`'s repository and service, including `song_featured_artists` join-table operations.
-- `POST /songs` (admin key): `title`, `primary_artist_id` (must exist), `album_id` (optional; if present, must belong to `primary_artist_id`), `duration_ms`, `genre_tags`/`mood_tags` (capped at 5, reusing Epic 1's onboarding validator pattern), `release_year`, `explicit`, `isrc` (optional, format-validated), `featured_artist_ids` (optional).
-- `GET /songs/{id}` — public full read.
-- `PATCH /songs/{id}`, `DELETE /songs/{id}` (admin key).
-- `popularity_score` is read-only through this API (defaults to `0`; a later epic owns updating it).
-
-### Acceptance criteria
-
-- A nonexistent `primary_artist_id`, or an `album_id` belonging to a different artist, returns structured `400`/`404`.
-- `genre_tags`/`mood_tags` capped at 5.
-- A featured artist can't be attached twice (join-table PK enforces it).
-- `go test ./...` passes; queries parameterized.
+**Acceptance:** nonexistent/mismatched artist-album returns structured error; join-table PK prevents duplicate features.
 
 ---
 
 ## E2-SS-06 — Catalog browse, filter, and pagination API
 
-**Owner:** A
-**Priority:** P0
-**Estimate:** 6 hours
-**Dependencies:** E2-SS-05
-**Merge position:** 6
+**Owner:** A | **Priority:** P0 | **Estimate:** 6 hours | **Dependencies:** E2-SS-05 | **Merge position:** 10
 
-### Work
-
-- `GET /catalog/songs?genre=&mood=&artist_id=&year=&sort=popularity|release_year&cursor=&limit=` — public.
-- Cursor-based pagination, same opaque-cursor approach as Epic 1's `GET /me/likes/songs`.
-- Combine filters with AND semantics; validate `sort` against an allowlist.
-- Explicitly out of scope: free-text/semantic search (Epic 12's job).
-
-### Acceptance criteria
-
-- Pagination has no duplicates/omissions across a stable seeded dataset, with and without filters.
-- Invalid `sort` or malformed `cursor` → `400`.
-- Combined filters narrow results correctly.
-- No endpoint here requires the admin key.
-
----
-
-## E2-SS-07 — Bulk catalog import / admin ingestion pipeline — **deferred to Epic 2 Sprint 2**
-
-**Priority:** P1 (deferred, not dropped)
-**Original estimate:** 8 hours
-**Reason for deferral:** doesn't fit four days once schema/CRUD/browse/Kafka/gRPC are prioritized; catalog rows can be seeded through `POST /artists`/`/albums`/`/songs` for this sprint's smoke test.
-
-See the original Epic 2 seven-day draft for full scope (CLI + HTTP import, `external_id` upsert idempotency, partial-batch failure reporting). Re-scope when Sprint 2 is planned.
+`GET /catalog/songs` with genre/mood/artist/year filters, allowlisted sort, cursor pagination (same opaque-cursor approach as Epic 1). Full-text/semantic search is explicitly Epic 12's job.
 
 ---
 
 ## E2-SS-08 — Kafka catalog event contract and local infrastructure
 
-**Owner:** B
-**Priority:** P0
-**Estimate:** 6 hours
-**Dependencies:** E2-SS-01
-**Merge position:** 7; contract can be prepared earlier, but merge after stable domain models
+**Owner:** B | **Priority:** P0 | **Estimate:** 6 hours | **Dependencies:** E2-SS-01 | **Merge position:** 11
 
-### Work
+`CatalogEntityUpdated` Protobuf (standard envelope + `entity_type`/`entity_id`/`operation`); `Publisher` interface; extend `kafka-init` with the new topic.
 
-- Define a `CatalogEntityUpdated` Protobuf message: the standard `EventMetadata` envelope plus `entity_type` (`ARTIST`/`ALBUM`/`SONG`), `entity_id`, and `operation` (`CREATED`/`UPDATED`/`DELETED`).
-- Add `segmentio/kafka-go` behind a small `Publisher` interface, same shape as `music-identity-gatekeeper`'s.
-- Extend the existing `kafka-init` job to also create the `catalog.entity.updated` topic (`--if-not-exists`).
-- Provide a no-op/fake publisher for unit tests.
-
-### Acceptance criteria
-
-- Protobuf generation is reproducible via a Make target.
-- The service connects to the existing local Kafka broker after `kafka-init`'s health check passes.
-- Unit tests don't require Kafka.
-- The event carries enough metadata for downstream deduplication and schema evolution.
+**Acceptance:** reproducible codegen; unit tests don't need Kafka.
 
 ---
 
 ## E2-SS-09 — Publish catalog mutation events
 
-**Owner:** B
-**Priority:** P0
-**Estimate:** 7 hours
-**Dependencies:** E2-SS-05, E2-SS-08
-**Merge position:** 8
+**Owner:** B | **Priority:** P0 | **Estimate:** 7 hours | **Dependencies:** E2-SS-05, E2-SS-08 | **Merge position:** 12
 
-### Work
+Reuse the outbox-then-direct-publish-with-fallback-relay design proven (and hard-learned) in E1-SS-09.
 
-- Publish `catalog.entity.updated` after every successful create/update/delete on artists, albums, and songs.
-- Reuse the outbox-then-direct-publish-with-fallback-relay design proven in E1-SS-09 — build it this way from the start instead of discovering the fire-and-forget gap the way Epic 1 did.
-- Keep event creation separate from Kafka transport.
-
-### Acceptance criteria
-
-- Every successful mutation emits exactly the documented event with the correct `entity_type`/`operation`.
-- Failed database mutations emit no event.
-- Disabling the background relay does not disable the direct-publish path — verify explicitly.
-- Unit tests assert payloads via a fake publisher; an integration test proves delivery to the local topic.
+**Acceptance:** every mutation emits the right event; disabling the relay doesn't disable direct publish (verify explicitly).
 
 ---
 
 ## E2-SS-10 — Internal gRPC catalog API
 
-**Owner:** A
-**Priority:** P0
-**Estimate:** 7 hours
-**Dependencies:** E2-SS-05, E2-SS-06
-**Merge position:** 9
+**Owner:** A | **Priority:** P0 | **Estimate:** 7 hours | **Dependencies:** E2-SS-05, E2-SS-06 | **Merge position:** 13
 
-### Work
-
-- Define `CatalogService` in `proto/catalog.proto`: `GetArtist`, `GetSong`, `BatchGetSongs` (by ID list — the method downstream services like Candidate Generation and the Feature Store will actually call at scale).
-- Generate Go client/server code reproducibly.
-- Run gRPC on a dedicated internal port (`50052`; `50051` belongs to `music-identity-gatekeeper`), restricted to the internal Docker network.
-- Graceful shutdown alongside HTTP.
-
-### Acceptance criteria
-
-- `BatchGetSongs` with a mix of valid/invalid/missing IDs returns valid ones plus a per-ID not-found list.
-- Invalid UUID → `InvalidArgument`; missing single lookup → `NotFound`.
-- A test gRPC client verifies all three RPCs.
-- HTTP and gRPC servers shut down cleanly together.
+`GetArtist`/`GetSong`/`BatchGetSongs` on internal port `50052` (`50051` is identity's). `BatchGetSongs` partially succeeds on mixed valid/invalid/missing IDs. Graceful shutdown alongside HTTP.
 
 ---
 
-## E2-SS-11 — Metrics, structured logging, and health — **deferred to Epic 2 Sprint 2**
+## E2-SS-13 — Basic end-to-end test, CI, and release `v0.2.0`
 
-**Priority:** P1 (deferred, not dropped)
-**Original estimate:** 8 hours
-**Reason for deferral:** E2-SS-02 already ships a basic health check; full Prometheus/zap depth doesn't fit four days without cutting P0 scope.
+**Owner:** A as release captain; B pairs | **Priority:** P0 | **Estimate:** 6 hours | **Dependencies:** E2-SS-01 through 06, 08, 09, 10 | **Merge position:** 14, closes Phase 2
 
-See the original Epic 2 seven-day draft for full scope. Re-scope when Sprint 2 is planned.
+Basic E2E: migrate → create artist/album/song → browse finds it → event verified → gRPC `BatchGetSongs` returns it → update/delete → events verified → `404` after delete. Minimal README stub. Tag `v0.2.0` after green CI.
 
 ---
 
-## E2-SS-12 — Documentation and API artifacts — **deferred to Epic 2 Sprint 2**
+# Six-Day Timeline
 
-**Priority:** P1 (deferred, not dropped)
-**Original estimate:** 8 hours
-**Reason for deferral:** a minimal README (quick start + env vars, written as part of E2-SS-13) covers "a new developer can run it"; full OpenAPI/Postman/architecture-diagram polish is deferred, same as Epic 1 deferred part of its own documentation depth into its Sprint 2.
+| Day | Phase | Developer A | Developer B | Merges | Release |
+|---|---|---|---|---|---|
+| **1** | 1 | E1-SS-11 metrics/logging | E1-SS-14 playlist schema + CRUD | 14, then 11 | — |
+| **2** | 1 | Release captain: E1-SS-13 (includes merging E1-SS-06 and E1-SS-12 first) | Finish E1-SS-15; pair on E1-SS-13 | 06 (merge-only), 12 (merge-only), 15, then 13 | **`v0.1.0`** |
+| **3** | 2 | E2-SS-02 scaffolding + admin auth | E2-SS-01 catalog schema | 01, then 02 | — |
+| **4** | 2 | E2-SS-04 album CRUD | E2-SS-03 artist CRUD | 03, then 04 | — |
+| **5** | 2 | E2-SS-06 browse/filter | E2-SS-05 song CRUD; start E2-SS-08 | 05, then 06 | — |
+| **6** | 2 | E2-SS-10 gRPC; pair as release captain | Finish 08; E2-SS-09; pair | 08, 09, 10, 13 | **`v0.2.0`** |
 
-See the original Epic 2 seven-day draft for full scope. Re-scope when Sprint 2 is planned.
-
----
-
-## E2-SS-13 — Basic end-to-end test, CI, and release
-
-**Owner:** A as release captain; B pairs on failures
-**Priority:** P0
-**Estimate:** 6 hours
-**Dependencies:** E2-SS-01 through E2-SS-06, E2-SS-08, E2-SS-09, E2-SS-10
-**Merge position:** 10, always last
-
-### Work
-
-- Add a basic end-to-end flow: migrate database → create an artist, album, and song via the HTTP API → browse/filter and confirm the new song is found → verify the `catalog.entity.updated` create event reached Kafka → call gRPC `BatchGetSongs` and confirm it's returned → update the song and verify the update event → delete it and verify the delete event and a subsequent `404`.
-- Write a minimal README stub: quick start, prerequisites, env vars (including `ADMIN_API_KEY`) — full documentation depth is Sprint 2's E2-SS-12.
-- Run tests and race detection in CI; build the Docker image in CI.
-- Validate migration up and down against PostgreSQL 16.
-- Run `go vet ./...`.
-- Create `v0.2.0` after the default branch is green.
-
-### Acceptance criteria
-
-- CI is green from a clean checkout.
-- No test relies on a developer's existing local database state.
-- Docker Compose reaches healthy status for `postgres`, `kafka`, `kafka-init`, and `catalog-svc`.
-- The basic smoke test passes twice consecutively.
-- A README exists covering how to start the service locally.
-- Tag `v0.2.0` points to the exact green release commit.
-
----
-
-# Four-Day Timeline
-
-| Day | Developer A | Developer B | Required merges by end of day |
-|---|---|---|---|
-| **Day 1 — Contracts and scaffolding** | E2-SS-02 service scaffolding and admin authorization | E2-SS-01 catalog schema and domain contracts | Merge **01**, then **02** |
-| **Day 2 — Artist and album APIs** | E2-SS-04 album CRUD and artist linking | E2-SS-03 artist CRUD and full read API | Merge **03**, then **04** |
-| **Day 3 — Song catalog, browse, and eventing contract** | E2-SS-06 browse, filter, and pagination API | E2-SS-05 song CRUD and metadata; then start E2-SS-08 (Kafka contract) | Merge **05**, then **06** |
-| **Day 4 — Integration and release (combined, intensive)** | E2-SS-10 gRPC catalog API; then pair as release captain on E2-SS-13 | Finish E2-SS-08, then E2-SS-09 catalog event publishing; then pair on E2-SS-13 | Merge **08**, then **09**, then **10**, then **13**; tag `v0.2.0` |
-
-Day 4 is intentionally the busiest day and is run as a combined
-integration push rather than two independent tickets — the same way Epic
-1's own Day 7 had both developers pairing rather than working two
-separate full-day tickets. If Day 4 doesn't fully fit, cut E2-SS-13's E2E
-scope to the create→browse→event chain only (drop the update/delete legs)
-before cutting anything else; do not skip the admin-key or FK-integrity
-acceptance criteria from earlier days.
+**On the freed-up day:** this plan is one day shorter than the last draft
+(6 vs. 7) purely because E1-SS-06 and E1-SS-12 turned out not to need
+scheduled dev time. If you'd rather keep a 7-day cadence — e.g. to give
+Day 6 (still the busiest day, three merges plus release) some slack — say
+so and I'll add it back as a buffer day between Phase 1 and Phase 2
+rather than manufacturing work to fill it.
 
 ---
 
 # Merge Train
 
 ```text
-1.  E2-SS-01  Catalog schema + domain contracts
-2.  E2-SS-02  Service scaffolding + admin authorization
-3.  E2-SS-03  Artist CRUD + full read API
-4.  E2-SS-04  Album CRUD + artist linking
-5.  E2-SS-05  Song CRUD + catalog metadata
-6.  E2-SS-06  Browse, filter, and pagination API
-7.  E2-SS-08  Kafka catalog contract + infrastructure
-8.  E2-SS-09  Catalog event publishing
-9.  E2-SS-10  Internal gRPC catalog API
-10. E2-SS-13  Basic E2E + CI + release
+—   E1-SS-06  Logout (resolved, merge-only — on fix/e1-ss-06-resolve-conflicts)
+—   E1-SS-12  Docs (verified clean, merge-only — on chore/Doc)
+1.  E1-SS-14  Playlist schema + CRUD
+2.  E1-SS-11  Metrics + logging
+3.  E1-SS-15  Playlist events
+4.  E1-SS-13  Epic 1 E2E + CI + release v0.1.0
+5.  E2-SS-01  Catalog schema + domain contracts
+6.  E2-SS-02  Service scaffolding + admin authorization
+7.  E2-SS-03  Artist CRUD + full read API
+8.  E2-SS-04  Album CRUD + artist linking
+9.  E2-SS-05  Song CRUD + catalog metadata
+10. E2-SS-06  Browse, filter, and pagination API
+11. E2-SS-08  Kafka catalog contract + infrastructure
+12. E2-SS-09  Catalog event publishing
+13. E2-SS-10  Internal gRPC catalog API
+14. E2-SS-13  Epic 2 basic E2E + CI + release v0.2.0
 
-Deferred to Epic 2 Sprint 2 (not part of this merge train):
-    E2-SS-07  Bulk import / ingestion pipeline
-    E2-SS-11  Full metrics + logging
-    E2-SS-12  Full documentation + API artifacts
+Deferred (not part of this merge train): E2-SS-07, E2-SS-11, E2-SS-12
 ```
 
 ## Merge rules
 
 1. Rebase each ticket branch on the latest default branch before review.
-2. A ticket cannot merge unless its direct dependencies are already merged.
+2. A ticket cannot merge unless its direct dependencies are already merged — E1-SS-13 specifically needs E1-SS-06 and E1-SS-12 actually landed on `main` first, not just resolved/verified on their own branches.
 3. Require `go test ./...` and `go vet ./...` on every PR.
 4. The non-author reviews each P0 ticket.
 5. Keep schema and generated-code changes in dedicated commits.
@@ -447,50 +301,20 @@ Deferred to Epic 2 Sprint 2 (not part of this merge train):
 
 ---
 
-# Daily Coordination
-
-## Start of day — 15 minutes
-
-- Confirm the previous day's required merges are complete.
-- Identify one blocker per developer at most.
-- Agree on API/interface changes before coding.
-- Pull the latest default branch.
-
-## Midday integration — 15 minutes
-
-- Push a compiling branch.
-- Run focused tests.
-- Notify the other developer of contract changes immediately.
-
-## End of day — 30 minutes
-
-- Open or merge the day's PRs.
-- Run `go test ./...` on the integrated branch.
-- Update ticket acceptance criteria with evidence.
-- Move incomplete work explicitly; do not silently mark a partial ticket done.
-
----
-
 # Risk Controls
 
 | Risk | Response |
 |---|---|
-| Day 4 is overloaded (three merges plus release, all in one day) | It's designed as a combined integration day, not three independent full tickets — expect close pairing, not parallel independent work; cut E2E scope before cutting correctness (see the Four-Day Timeline note) |
-| Admin-key auth model diverges from `music-identity-gatekeeper`'s end-user JWT model | Document explicitly why: catalog writes are operator/ETL actions, not end-user actions, so a shared static key is the simpler, more decoupled choice |
-| No consumer exists yet for the Kafka events this service publishes | Same as Epic 1's Kafka topics — preserve the publisher interface and fake tests now; consuming is a later epic's job |
-| Artist/album/song schema needs a field nobody anticipated once real data is loaded | Prefer additive migrations over redesigning an already-merged one — especially relevant once Sprint 2's bulk import surfaces real-world data shapes |
-| Both developers modify server wiring | B exposes constructors and handlers; A performs all final route and server wiring |
-| Deferred tickets (07, 11, 12) get forgotten instead of properly picked up later | Their scope is preserved in this file and in the original seven-day draft; track them explicitly when Epic 2 Sprint 2 is planned, the same way Epic 1's Sprint 2 tracked its own leftovers |
-| Scope still exceeds four days even after deferring 07/11/12 | Cut gRPC's `BatchGetSongs` down to a single-ID `GetSong`-only path for this sprint, and restore batching in Sprint 2 — do not cut schema correctness, write-endpoint authorization, or the create→event chain of the E2E test |
+| E1-SS-06's resolved branch drifts again before it's actually merged into `main` | Merge it soon — every day it sits unmerged risks another PR landing on `main` and reopening the same conflict surface |
+| Playlist scope creeps into reordering or collaboration | Explicitly out of scope — append/remove only |
+| Day 6 repeats the earlier crunch (three merges + release in one day) | Paired integration day, not three solo tickets; cut E2E scope (update/delete legs) before cutting correctness; consider the freed-up day as a buffer here if it's still too tight |
+| Deferred Epic 2 tickets (07, 11, 12) get forgotten | Scope preserved above under Phase 2's starting-point note |
 
 ---
 
 # Success Metrics
 
-- 10 tickets merged in dependency order (01-06, 08-10, 13)
-- Zero known P0 defects
-- Every catalog write endpoint rejects a missing or incorrect admin key
-- A basic end-to-end flow passes from a clean environment
-- HTTP, Kafka, and gRPC contracts work and are tested (full documentation of them is Sprint 2)
-- Release `v0.2.0` is reproducible from the tagged commit
+- 14 tickets merged in dependency order, plus E1-SS-06 and E1-SS-12 actually landed on `main`
+- `v0.1.0` tagged at Phase 1's close, `v0.2.0` at Phase 2's close
+- Epic 1 fully matches EPICS.md's description; Epic 2's core is live
 - Epic 2 Sprint 2 is scoped and ready to pick up E2-SS-07, 11, and 12

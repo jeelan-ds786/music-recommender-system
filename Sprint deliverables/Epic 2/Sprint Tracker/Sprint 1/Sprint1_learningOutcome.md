@@ -1,96 +1,64 @@
-# Sprint 1 - Epic 2 Learning Outcomes
+# Epic 2 Sprint 1 - Six-Day Combined Learning Outcomes
 
-**Epic:** Music Catalog Management Service
-**Duration:** 4 days (core scope; bulk import, full observability, and full docs deferred to Sprint 2)
+**Scope:** Epic 1 remaining work (Phase 1, Days 1-2) + Epic 2 catalog core (Phase 2, Days 3-6)
 **Team:** Developer A and Developer B
-**Release target:** `v0.2.0`
+**Release targets:** `v0.1.0` (Phase 1), `v0.2.0` (Phase 2)
 
 ## Sprint Learning Goal
 
-By the end of this sprint, the team should be able to design, build, and
-release the core of a second production-style Go service that shares
-infrastructure with an existing service (Postgres, Kafka) without sharing
-code, and that exposes data for other services to consume rather than
-serving end users directly — and do it under a materially tighter
-timeline than Epic 1's, which means learning to identify and defer
-lower-priority scope deliberately rather than build everything shallowly.
+By the end of this sprint, the team should be able to (1) tell the
+difference between a ticket that's actually blocked and one that just
+needs a mechanical merge step, and schedule accordingly instead of
+budgeting dev-days for either by default, and (2) build the core of a
+second production service under a compressed timeline right afterward.
 
-The goal is not only to finish endpoints. Each developer should
-understand why the catalog's data model, authorization model, and event
-contract were designed the way they were, how they differ deliberately
-from Epic 1's identity service, and why bulk import / full observability
-/ full docs were the right three things to cut for time.
-
-## Languages And Formats
-
-- [ ] **Go:** Write handlers, services, repositories, and gRPC servers under time pressure without skipping tests.
-- [ ] **PostgreSQL SQL:** Design a multi-table relational schema with real foreign keys, a normalized many-to-many join table, and GIN indexes for array-tag filtering.
-- [ ] **Protocol Buffers:** Define a versioned Kafka event and an internal gRPC batch-lookup contract.
-- [ ] **YAML:** Extend Docker Compose with a second service and a second database on a shared Postgres container.
-- [ ] **JSON:** Design API payloads, structured errors, and events.
-- [ ] **Markdown and Mermaid:** Write just enough documentation to unblock a new developer, and explicitly flag what's deferred rather than leaving it undocumented.
-
-## Tools And Libraries
-
-| Tool or library | Learning outcome |
-|---|---|
-| Go | Build a second idiomatic, modular backend service reusing proven patterns without a shared library. |
-| `chi` | Define REST routes and compose HTTP middleware, including a non-JWT authorization scheme. |
-| `pgx/v5` | Model a relational catalog: foreign keys, cascades, a join table, GIN indexes, and cursor-friendly sort indexes. |
-| `golang-migrate` | Apply and roll back a multi-table schema across four migrations. |
-| `segmentio/kafka-go` | Reimplement a proven transactional-outbox publishing pattern in a second service. |
-| `google.golang.org/grpc` | Design and implement a batch-lookup RPC for downstream service-to-service calls. |
-| Docker and Docker Compose | Extend an existing multi-service stack with a new service and database rather than building one from scratch. |
-
-`prometheus/client_golang`, `uber-go/zap`, full OpenAPI/Postman authoring,
-and GitHub Actions extensions for this service arrive with Epic 2 Sprint
-2 (E2-SS-11 and E2-SS-12).
+The trigger for goal (1): two tickets that looked identical on the
+surface ("implemented, not merged") turned out to need completely
+different treatment — E1-SS-06 needed real conflict resolution across six
+files (verified, then actually done and tested), while E1-SS-12 needed
+nothing but a push and a PR. Once that was sorted out, neither consumed
+any of this sprint's scheduled capacity — the plan got a day shorter as a
+direct result, not because scope was cut.
 
 ## Core Engineering Outcomes
 
-### Architecture
+### Resolving a Real Merge Conflict (not just diagnosing one)
 
-- [ ] Explain why this service copies Epic 1's outbox/publisher pattern instead of importing it as a shared library.
-- [ ] Keep HTTP, Kafka, and gRPC transport concerns outside domain logic, same discipline as Epic 1.
-- [ ] Explain why catalog writes use a static admin key instead of end-user JWTs, and what that decision trades away.
-- [ ] Explain the reasoning behind deferring bulk import, full observability, and full docs to a Sprint 2, and why that's a scoping decision, not a quality shortcut on what did ship.
+- [ ] Reconcile two independently-evolved changes to the same file (`internal/auth/middleware.go`, `internal/token/service.go`) so both survive — tier claims and revocation, not one replacing the other.
+- [ ] Recognize when one side of a conflict is simply obsolete (the branch's pre-gRPC `http.ListenAndServe` pattern, its stale `REDIS_URL` fallback, its outdated `preference.NewService` call) and discard it rather than trying to merge dead code forward.
+- [ ] Verify a conflict resolution with more than a successful `go build` — run the real test suite against a real database, and smoke-test the actual behavior (logout, blacklist TTL, no raw tokens in logs) before calling it resolved.
+- [ ] Know where to stop: the resolution lives on its own branch, unmerged into `main` and unpushed, until there's an explicit decision to land it — technical completion and "ready to ship" are different gates.
 
-### Data Modeling
+### Closing Out Epic 1's Real Remaining Work
 
-- [ ] Explain why featured artists are a normalized join table but genre/mood tags are array columns.
-- [ ] Use foreign keys and `ON DELETE CASCADE`/`ON DELETE SET NULL` deliberately.
-- [ ] Explain why a JSONB column can be reserved now for a future epic (audio features) without that epic's schema being designed yet.
+- [ ] Build playlists (E1-SS-14/15) to fit existing conventions — ownership checks, idempotency, event publishing — as genuinely new scope, distinct from the merge-only tickets.
+- [ ] Retrofit metrics/logging onto a fully-built service (E1-SS-11).
+- [ ] Run Epic 1's first release checklist, now including logout and playlists in the E2E flow.
 
-### Events And Service Communication
+### Building The Second Service's Core (Phase 2)
 
-- [ ] Define a versioned Protobuf event with an entity-type/operation envelope general enough for three different entity kinds.
-- [ ] Build the outbox-then-direct-publish-with-fallback-relay pattern correctly the first time, using the specific bug Epic 1 found late (a disabled relay silently disabling all publishing) as a design constraint from day one.
-- [ ] Implement and test a gRPC batch RPC that partially succeeds rather than failing all-or-nothing.
-- [ ] Run HTTP and gRPC servers together with graceful shutdown on a second internal port.
+- [ ] Reimplement the outbox/publisher pattern in a second service without repeating E1-SS-09's original bug.
+- [ ] Design a batch gRPC RPC with partial-success semantics.
+- [ ] Identify what's safe to defer under time pressure versus what can't be cut.
 
-### Working Under Compression
-
-- [ ] Identify which planned scope is safe to defer (bulk import, full metrics, full docs) versus what can't be cut (schema correctness, write-endpoint authorization, event correctness).
-- [ ] Run a genuinely compressed integration day (Day 4) as a paired push rather than two siloed tickets.
-- [ ] Leave a deferred ticket in a state where someone else could pick it up later with no lost context (see this sprint's TODOS file for how E2-SS-07/11/12 are recorded, not deleted).
-
-## Four-Day Learning Tracker
+## Six-Day Learning Tracker
 
 | Day | Developer A learns and demonstrates | Developer B learns and demonstrates | Evidence |
 |---|---|---|---|
-| **Day 1** | Service scaffolding for a second service, static-key authorization design | SQL relational schema design, join tables vs. arrays, transport-independent domain contracts | [ ] PRs 01 and 02 merged |
-| **Day 2** | Album-artist relationship validation, friendly FK error mapping | Artist CRUD, patch DTOs, pagination, repository tests | [ ] PRs 03 and 04 merged |
-| **Day 3** | Cursor pagination reused across a second dataset shape, filter composition | Song CRUD, tag validation, join-table writes, then starting a Protobuf event contract | [ ] PRs 05 and 06 merged |
-| **Day 4** | Batch gRPC RPC design and partial-success semantics, then release-day pairing | Outbox/publisher reimplementation, event tests, then release-day pairing | [ ] PRs 08, 09, 10, and 13 merged; `v0.2.0` tagged |
+| **1** | Retrofitting metrics/logging onto a fully-built service | Playlist schema, CRUD, ownership checks | [ ] PRs 14 and 11 merged |
+| **2** | Landing two merge-only tickets (06, 12) before running Epic 1's first release checklist | Extending the event publisher; updating existing docs | [ ] E1-SS-06 and E1-SS-12 merged to `main`; PRs 15 and 13 merged; `v0.1.0` tagged |
+| **3** | Service scaffolding for a second service | SQL relational schema, join tables vs. arrays | [ ] PRs 01 and 02 merged |
+| **4** | Album-artist relationship validation | Artist CRUD, pagination | [ ] PRs 03 and 04 merged |
+| **5** | Cursor pagination on a second dataset shape | Song CRUD, then a Protobuf event contract | [ ] PRs 05 and 06 merged |
+| **6** | Batch gRPC partial-success design, then release pairing | Outbox reimplementation, then release pairing | [ ] PRs 08, 09, 10, 13 merged; `v0.2.0` tagged |
 
 ## Individual Reflection
 
 ### Developer A
 
-- [ ] I can explain why this service's write endpoints use an admin key instead of JWTs, and when that choice should change.
-- [ ] I can explain how the batch gRPC RPC handles partial failure.
-- [ ] I can explain why bulk import and full observability were deferred rather than built shallowly.
-- [ ] I reviewed at least one P0 ticket written by Developer B.
+- [ ] I can list the six files that conflicted in E1-SS-06 and explain, for each, why the resolution went the way it did (kept ours, kept theirs, or merged both).
+- [ ] I can explain why passing `go build` wasn't enough to call the merge done, and what the smoke test actually proved that the build alone didn't.
+- [ ] I know exactly what's left before E1-SS-06 ships: merge into `main`, push to `origin`. Nothing else.
 
 **Most important concept learned:**
 
@@ -100,10 +68,9 @@ and GitHub Actions extensions for this service arrive with Epic 2 Sprint
 
 ### Developer B
 
-- [ ] I can explain why featured artists are a join table but genre/mood tags are arrays.
-- [ ] I can explain the outbox/publisher pattern well enough to have implemented it a second time without re-reading Epic 1's code line by line.
-- [ ] I can explain what's left in E2-SS-07/11/12 for Sprint 2, precisely enough that either developer could pick them up cold.
-- [ ] I reviewed at least one P0 ticket written by Developer A.
+- [ ] I can explain why E1-SS-12 needed zero additional engineering work, only a process step.
+- [ ] I can explain why playlist songs reference the catalog service without a local foreign key.
+- [ ] I implemented the outbox pattern a second time without repeating Epic 1's fallback-relay bug.
 
 **Most important concept learned:**
 
@@ -113,20 +80,18 @@ and GitHub Actions extensions for this service arrive with Epic 2 Sprint
 
 ## Completion Evidence
 
-- [ ] Links to all merged pull requests are recorded.
-- [ ] Unit, integration, race, and end-to-end test results are recorded.
-- [ ] Migration up/down output is recorded for the `muse_catalog` database.
-- [ ] Docker Compose health output is recorded for both services running together.
-- [ ] Example HTTP, Kafka, and gRPC requests are documented, even informally.
-- [ ] Final CI run is green.
-- [ ] Release tag `v0.2.0` points to the verified commit.
-- [ ] E2-SS-07, E2-SS-11, and E2-SS-12 are logged as Epic 2 Sprint 2's backlog with their original scope intact.
+- [ ] E1-SS-06 merged into `main` and pushed; E1-SS-12 merged via PR.
+- [ ] Links to all remaining merged pull requests are recorded.
+- [ ] Unit, integration, race, and end-to-end test results are recorded for both phases.
+- [ ] Migration up/down output recorded for both `music-identity-gatekeeper` (through `000009`) and `muse_catalog`.
+- [ ] Both CI runs are green; both tags (`v0.1.0`, `v0.2.0`) point to their verified commits.
+- [ ] E2-SS-07, E2-SS-11, E2-SS-12 logged as Epic 2 Sprint 2's backlog.
 
 ## Final Outcome
 
-After completing this sprint, both developers should be able to describe
-how a second, independently-owned service integrates into the same
-platform as the first, and how deliberately scoping a sprint — shipping a
-correct core and explicitly deferring the rest — differs from either
-overcommitting to the original seven-day plan or silently shipping a
-shallower version of everything.
+After this sprint, both developers should be able to describe not just
+what shipped, but how correctly diagnosing two similar-looking tickets
+changed the actual schedule — one needed real engineering work with
+verification beyond a green build, the other needed none at all — and
+why treating them identically at the planning stage would have either
+wasted a day or shipped something unverified.
