@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
@@ -15,6 +16,8 @@ type contextKey string
 const (
 	UserIDKey contextKey = "user_id"
 	TierKey   contextKey = "tier"
+	JTIKey    contextKey = "jti"
+	ExpiryKey contextKey = "expires_at"
 )
 
 func UserIDFromContext(ctx context.Context) (string, bool) {
@@ -27,7 +30,29 @@ func TierFromContext(ctx context.Context) (string, bool) {
 	return tier, ok
 }
 
-func AuthMiddleware(jwtService *token.JWTService, log *logger.Logger) func(http.Handler) http.Handler {
+func JTIFromContext(ctx context.Context) (string, bool) {
+	jti, ok := ctx.Value(JTIKey).(string)
+	return jti, ok
+}
+
+func ExpiryFromContext(ctx context.Context) (time.Time, bool) {
+	expiresAt, ok := ctx.Value(ExpiryKey).(time.Time)
+	return expiresAt, ok
+}
+
+type BlacklistChecker interface {
+	IsBlacklisted(ctx context.Context, jti string) (bool, error)
+}
+
+func AuthMiddleware(
+	jwtService *token.JWTService,
+	log *logger.Logger,
+	blacklists ...BlacklistChecker,
+) func(http.Handler) http.Handler {
+	var blacklist BlacklistChecker
+	if len(blacklists) > 0 {
+		blacklist = blacklists[0]
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			rid, _ := reqid.FromContext(r.Context())
@@ -63,11 +88,26 @@ func AuthMiddleware(jwtService *token.JWTService, log *logger.Logger) func(http.
 				writeError(w, http.StatusUnauthorized, "INVALID_ACCESS_TOKEN")
 				return
 			}
+			if blacklist != nil {
+				blacklisted, err := blacklist.IsBlacklisted(r.Context(), claims.ID)
+				if err != nil {
+					log.Error(rid, "Ending session validation for path=%s (revocation check unavailable)", r.URL.Path)
+					writeError(w, http.StatusServiceUnavailable, "AUTHORIZATION_UNAVAILABLE")
+					return
+				}
+				if blacklisted {
+					log.Info(rid, "Ending session validation for path=%s (revoked access token)", r.URL.Path)
+					writeError(w, http.StatusUnauthorized, "REVOKED_ACCESS_TOKEN")
+					return
+				}
+			}
 
 			log.Info(rid, "Ending session validation for path=%s (valid session for user_id=%s)", r.URL.Path, claims.UserID)
 
 			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
 			ctx = context.WithValue(ctx, TierKey, claims.Tier)
+			ctx = context.WithValue(ctx, JTIKey, claims.ID)
+			ctx = context.WithValue(ctx, ExpiryKey, claims.ExpiresAt.Time)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

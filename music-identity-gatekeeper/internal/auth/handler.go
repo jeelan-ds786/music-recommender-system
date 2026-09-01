@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"github.com/google/uuid"
+
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/token"
 )
 
 type Handler struct {
@@ -175,6 +179,38 @@ func (h *Handler) Refresh(
 			"refresh_token": tokenPair.RefreshToken,
 		},
 	)
+}
+
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req LogoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST_BODY")
+		return
+	}
+	if validationErr := ValidateStruct(req); validationErr != nil {
+		writeJSON(w, http.StatusBadRequest, validationErr)
+		return
+	}
+
+	jti, jtiOK := JTIFromContext(r.Context())
+	expiresAt, expiryOK := ExpiryFromContext(r.Context())
+	userIDValue, userIDOK := UserIDFromContext(r.Context())
+	userID, userIDErr := uuid.Parse(userIDValue)
+	if !jtiOK || !expiryOK || !userIDOK || userIDErr != nil {
+		writeError(w, http.StatusUnauthorized, "INVALID_ACCESS_TOKEN")
+		return
+	}
+
+	if err := h.service.Logout(r.Context(), req, userID, jti, expiresAt); err != nil {
+		if errors.Is(err, token.ErrRevocationUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "AUTHORIZATION_UNAVAILABLE")
+			return
+		}
+		writeError(w, http.StatusUnauthorized, "INVALID_REFRESH_TOKEN")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) Me(
