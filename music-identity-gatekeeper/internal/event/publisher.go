@@ -81,7 +81,7 @@ func (p *KafkaPublisher) Publish(
 
 	rid, _ := reqid.FromContext(ctx)
 
-	p.log.Debug(rid, "Starting Publish to broker(s) %v, topic=%s key=%s message=%s", p.brokers, topic, key, value)
+	p.log.Debug(rid, "Starting Publish to broker(s) %v, topic=%s key=%s size_bytes=%d", p.brokers, topic, key, len(value))
 
 	err := p.writer.WriteMessages(ctx, kafka.Message{
 		Topic: topic,
@@ -93,7 +93,7 @@ func (p *KafkaPublisher) Publish(
 		return err
 	}
 
-	p.log.Info(rid, "Ending Publish for topic=%s key=%s (published) message=%s", topic, key, value)
+	p.log.Info(rid, "Ending Publish for topic=%s key=%s (published)", topic, key)
 
 	return nil
 }

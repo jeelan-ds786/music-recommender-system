@@ -103,6 +103,7 @@ func AuthMiddleware(
 			}
 
 			log.Info(rid, "Ending session validation for path=%s (valid session for user_id=%s)", r.URL.Path, claims.UserID)
+			reqid.SetUserID(r.Context(), claims.UserID)
 
 			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
 			ctx = context.WithValue(ctx, TierKey, claims.Tier)
