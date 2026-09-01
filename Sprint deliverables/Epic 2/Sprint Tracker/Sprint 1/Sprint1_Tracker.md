@@ -2,7 +2,7 @@
 
 **Sprint goal:** Phase 1 (Days 1-2) closes out Epic 1's remaining work and tags `v0.1.0`. Phase 2 (Days 3-6) builds Epic 2's catalog core and tags `v0.2.0`.
 
-**Status of the two carried-over tickets:** E1-SS-06 is actually resolved — merge commit `5a83591` on local branch `fix/e1-ss-06-resolve-conflicts`, verified via `go build`/`go vet`/`go test -race` (incl. real Postgres) plus a live logout smoke test. E1-SS-12 is verified clean on `chore/Doc`. Neither needs scheduled dev time — both are merge-only, tracked as their own row below rather than folded into a day. See `Sprint1_TODOS.md` for full detail.
+**Status of the two carried-over tickets:** both are done and merged to `main` — E1-SS-06 via PR #22 (`92b65a1`), E1-SS-12 via PR #18 (`a20fa1f`). Neither needed scheduled dev time in this sprint. See `Sprint1_TODOS.md` for full detail.
 
 **Team split:**
 
@@ -14,7 +14,7 @@
 ## Daily Trackers
 
 - [Day 1 - Metrics and playlist CRUD](day-1-metrics-and-playlists.md)
-- [Day 2 - Merge 06/12, playlist events, Epic 1 release (v0.1.0)](day-2-epic1-release.md)
+- [Day 2 - Playlist events, Epic 1 release (v0.1.0)](day-2-epic1-release.md)
 - [Day 3 - Catalog contracts and scaffolding](day-3-catalog-contracts.md)
 - [Day 4 - Artist and album APIs](day-4-artist-and-album.md)
 - [Day 5 - Song catalog, browse, and Kafka contract](day-5-song-browse-kafka.md)
@@ -28,9 +28,9 @@ timeline
     Day 1 : A - E1-SS-11 Metrics and logging
           : B - E1-SS-14 Playlist schema and CRUD
           : Merge 14 then 11
-    Day 2 : A - Release captain E1-SS-13 (merges 06 and 12 first)
+    Day 2 : A - Release captain E1-SS-13
           : B - Finish E1-SS-15, pair on E1-SS-13
-          : Merge 06, 12, 15, then 13, tag v0.1.0
+          : Merge 15, then 13, tag v0.1.0
     Day 3 : A - E2-SS-02 Scaffolding and admin auth
           : B - E2-SS-01 Catalog schema
           : Merge 01 then 02
@@ -49,8 +49,8 @@ timeline
 
 ```mermaid
 flowchart LR
-    T06["E1-SS-06 Logout (resolved, merge-only)"]
-    T12["E1-SS-12 Docs (verified clean, merge-only)"]
+    T06["E1-SS-06 Logout (merged, PR #22)"]
+    T12["E1-SS-12 Docs (merged, PR #18)"]
     T11["E1-SS-11 Observability"]
     T14["E1-SS-14 Playlist schema + CRUD"]
     T15["E1-SS-15 Playlist events"]
@@ -80,9 +80,9 @@ flowchart LR
 
 ## Sprint-Level Checklist
 
-**Merge-only (no scheduled dev time):**
-- [ ] E1-SS-06's `fix/e1-ss-06-resolve-conflicts` branch merged into `main` and pushed to `origin`.
-- [ ] E1-SS-12's `chore/Doc` branch pushed to `origin` and merged via reviewed PR.
+**Already done:**
+- [x] E1-SS-06 merged into `main` (PR #22).
+- [x] E1-SS-12 merged into `main` (PR #18).
 
 **Phase 1:**
 - [ ] E1-SS-11, E1-SS-14, E1-SS-15 merged.

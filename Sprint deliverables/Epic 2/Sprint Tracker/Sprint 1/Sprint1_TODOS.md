@@ -13,43 +13,32 @@
 
 ---
 
-## E1-SS-06 and E1-SS-12: resolved, not scheduled work
+## E1-SS-06 and E1-SS-12: done, merged to `main`
 
-Neither ticket consumes any developer time in this sprint — both are
-merge-only at this point:
+Both fully landed — confirmed against `origin/main`:
 
-**E1-SS-06 — actually resolved.** All 6 real conflicts (`Makefile`,
-`cmd/server/main.go`, `internal/auth/middleware.go`,
-`internal/preference/service.go` + test, `internal/token/service.go`)
-are fixed, committed as a merge commit on local branch
-`fix/e1-ss-06-resolve-conflicts` (`5a83591`, based on `main`). Verified:
-`go build ./...`, `go vet ./...`, and `go test -race ./...` all pass,
-including the DB-backed tests against a real local Postgres (previously
-these could only be checked for conflicts, not correctness). Also ran a
-live smoke test: register → login → `GET /me` (200) → logout (204) →
-`GET /me` with the same access token (401 `REVOKED_ACCESS_TOKEN`) →
-refresh with the same refresh token (401). Redis blacklist TTL measured
-at 882s, correctly under the access token's 900s lifetime. No raw token
-appeared in logs.
-**Not yet merged into `main` or pushed to `origin`** — say the word and
-I'll do either or both; I stopped short of pushing/merging on my own
-since that touches shared state.
+**E1-SS-06 — merged.** PR #22 ("Conflict issue fixed", commit `92b65a1`)
+carries the blacklist/revocation wiring: `internal/revocation` is present
+on `main`, `token.NewService` and `auth.AuthMiddleware` both take the
+blacklist, and `POST /auth/logout` is routed. No longer a risk to track.
 
-**E1-SS-12 — done, pending merge.** `chore/Doc` is verified clean (zero
-conflicts against `main`). It just needs pushing to `origin` and merging
-via PR — no further work or discussion needed.
+**E1-SS-12 — merged.** PR #18 ("Documentation and API artifacts", commit
+`a20fa1f`). README, OpenAPI, and Postman for the original Epic 1 surface
+are live on `main`.
+
+Neither is a dependency risk anymore — E1-SS-13 below can build on both
+without a merge-order caveat.
 
 ---
 
 ## Remaining Epic 1 tickets (moved into this sprint as Phase 1)
 
-Two tickets per developer, apart from the two above:
+Two tickets per developer — this was already the real remaining work
+apart from E1-SS-06/12, which are now simply done rather than "not
+scheduled but pending":
 
 - **Developer A:** E1-SS-11 (metrics/logging/health), E1-SS-13 (Epic 1 end-to-end test, CI, and release `v0.1.0` — release captain)
 - **Developer B:** E1-SS-14 (playlist schema + CRUD), E1-SS-15 (playlist events)
-
-This is real remaining work — the 3-day estimate from the old separate
-plan shrinks to about 2 days now that 06 and 12 no longer occupy Day 1.
 
 ---
 
@@ -141,7 +130,7 @@ Request-ID middleware, zap JSON logging (request ID, user ID, method, route, sta
 
 ## E1-SS-13 — End-to-end test, CI, and release `v0.1.0`
 
-**Owner:** A as release captain; B pairs | **Priority:** P0 | **Estimate:** 8 hours | **Dependencies:** E1-SS-06 (merge only), E1-SS-11, E1-SS-12 (merge only), E1-SS-14, E1-SS-15 | **Merge position:** 4, closes Phase 1
+**Owner:** A as release captain; B pairs | **Priority:** P0 | **Estimate:** 8 hours | **Dependencies:** E1-SS-06, E1-SS-11, E1-SS-12, E1-SS-14, E1-SS-15 (all merged or completing this phase) | **Merge position:** 4, closes Phase 1
 
 Extended E2E: migrate → register/login → profile GET/PATCH → onboarding → like/follow → playlist create/add-song/remove-song → verify playlist events → gRPC profile call → logout → verify token rejection. Update README/OpenAPI/Postman for logout and playlists. CI green, migration up/down through `000009`, tag `v0.1.0`.
 
@@ -250,7 +239,7 @@ Basic E2E: migrate → create artist/album/song → browse finds it → event ve
 | Day | Phase | Developer A | Developer B | Merges | Release |
 |---|---|---|---|---|---|
 | **1** | 1 | E1-SS-11 metrics/logging | E1-SS-14 playlist schema + CRUD | 14, then 11 | — |
-| **2** | 1 | Release captain: E1-SS-13 (includes merging E1-SS-06 and E1-SS-12 first) | Finish E1-SS-15; pair on E1-SS-13 | 06 (merge-only), 12 (merge-only), 15, then 13 | **`v0.1.0`** |
+| **2** | 1 | Release captain: E1-SS-13 | Finish E1-SS-15; pair on E1-SS-13 | 15, then 13 | **`v0.1.0`** |
 | **3** | 2 | E2-SS-02 scaffolding + admin auth | E2-SS-01 catalog schema | 01, then 02 | — |
 | **4** | 2 | E2-SS-04 album CRUD | E2-SS-03 artist CRUD | 03, then 04 | — |
 | **5** | 2 | E2-SS-06 browse/filter | E2-SS-05 song CRUD; start E2-SS-08 | 05, then 06 | — |
@@ -268,8 +257,7 @@ rather than manufacturing work to fill it.
 # Merge Train
 
 ```text
-—   E1-SS-06  Logout (resolved, merge-only — on fix/e1-ss-06-resolve-conflicts)
-—   E1-SS-12  Docs (verified clean, merge-only — on chore/Doc)
+(already merged: E1-SS-06 via PR #22, E1-SS-12 via PR #18)
 1.  E1-SS-14  Playlist schema + CRUD
 2.  E1-SS-11  Metrics + logging
 3.  E1-SS-15  Playlist events
@@ -291,7 +279,7 @@ Deferred (not part of this merge train): E2-SS-07, E2-SS-11, E2-SS-12
 ## Merge rules
 
 1. Rebase each ticket branch on the latest default branch before review.
-2. A ticket cannot merge unless its direct dependencies are already merged — E1-SS-13 specifically needs E1-SS-06 and E1-SS-12 actually landed on `main` first, not just resolved/verified on their own branches.
+2. A ticket cannot merge unless its direct dependencies are already merged.
 3. Require `go test ./...` and `go vet ./...` on every PR.
 4. The non-author reviews each P0 ticket.
 5. Keep schema and generated-code changes in dedicated commits.
@@ -305,7 +293,6 @@ Deferred (not part of this merge train): E2-SS-07, E2-SS-11, E2-SS-12
 
 | Risk | Response |
 |---|---|
-| E1-SS-06's resolved branch drifts again before it's actually merged into `main` | Merge it soon — every day it sits unmerged risks another PR landing on `main` and reopening the same conflict surface |
 | Playlist scope creeps into reordering or collaboration | Explicitly out of scope — append/remove only |
 | Day 6 repeats the earlier crunch (three merges + release in one day) | Paired integration day, not three solo tickets; cut E2E scope (update/delete legs) before cutting correctness; consider the freed-up day as a buffer here if it's still too tight |
 | Deferred Epic 2 tickets (07, 11, 12) get forgotten | Scope preserved above under Phase 2's starting-point note |
@@ -314,7 +301,7 @@ Deferred (not part of this merge train): E2-SS-07, E2-SS-11, E2-SS-12
 
 # Success Metrics
 
-- 14 tickets merged in dependency order, plus E1-SS-06 and E1-SS-12 actually landed on `main`
+- 14 tickets merged in dependency order (E1-SS-06 and E1-SS-12 already merged, not part of this count)
 - `v0.1.0` tagged at Phase 1's close, `v0.2.0` at Phase 2's close
 - Epic 1 fully matches EPICS.md's description; Epic 2's core is live
 - Epic 2 Sprint 2 is scoped and ready to pick up E2-SS-07, 11, and 12

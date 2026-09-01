@@ -15,9 +15,9 @@ second production service under a compressed timeline right afterward.
 The trigger for goal (1): two tickets that looked identical on the
 surface ("implemented, not merged") turned out to need completely
 different treatment — E1-SS-06 needed real conflict resolution across six
-files (verified, then actually done and tested), while E1-SS-12 needed
-nothing but a push and a PR. Once that was sorted out, neither consumed
-any of this sprint's scheduled capacity — the plan got a day shorter as a
+files, while E1-SS-12 needed nothing but a push and a PR. Both are now
+merged to `main` (PR #22 and PR #18 respectively). Neither consumed any
+of this sprint's scheduled capacity — the plan got a day shorter as a
 direct result, not because scope was cut.
 
 ## Core Engineering Outcomes
@@ -27,11 +27,11 @@ direct result, not because scope was cut.
 - [ ] Reconcile two independently-evolved changes to the same file (`internal/auth/middleware.go`, `internal/token/service.go`) so both survive — tier claims and revocation, not one replacing the other.
 - [ ] Recognize when one side of a conflict is simply obsolete (the branch's pre-gRPC `http.ListenAndServe` pattern, its stale `REDIS_URL` fallback, its outdated `preference.NewService` call) and discard it rather than trying to merge dead code forward.
 - [ ] Verify a conflict resolution with more than a successful `go build` — run the real test suite against a real database, and smoke-test the actual behavior (logout, blacklist TTL, no raw tokens in logs) before calling it resolved.
-- [ ] Know where to stop: the resolution lives on its own branch, unmerged into `main` and unpushed, until there's an explicit decision to land it — technical completion and "ready to ship" are different gates.
+- [ ] Know where to stop: technical resolution and "merged to `main`" are different gates — landing a fix is a separate, deliberate step, not an automatic follow-on to fixing it.
 
 ### Closing Out Epic 1's Real Remaining Work
 
-- [ ] Build playlists (E1-SS-14/15) to fit existing conventions — ownership checks, idempotency, event publishing — as genuinely new scope, distinct from the merge-only tickets.
+- [ ] Build playlists (E1-SS-14/15) to fit existing conventions — ownership checks, idempotency, event publishing — as genuinely new scope, distinct from E1-SS-06/12's already-merged work.
 - [ ] Retrofit metrics/logging onto a fully-built service (E1-SS-11).
 - [ ] Run Epic 1's first release checklist, now including logout and playlists in the E2E flow.
 
@@ -46,7 +46,7 @@ direct result, not because scope was cut.
 | Day | Developer A learns and demonstrates | Developer B learns and demonstrates | Evidence |
 |---|---|---|---|
 | **1** | Retrofitting metrics/logging onto a fully-built service | Playlist schema, CRUD, ownership checks | [ ] PRs 14 and 11 merged |
-| **2** | Landing two merge-only tickets (06, 12) before running Epic 1's first release checklist | Extending the event publisher; updating existing docs | [ ] E1-SS-06 and E1-SS-12 merged to `main`; PRs 15 and 13 merged; `v0.1.0` tagged |
+| **2** | Running Epic 1's first release checklist on top of already-merged E1-SS-06/12 | Extending the event publisher; updating existing docs | [ ] PRs 15 and 13 merged; `v0.1.0` tagged |
 | **3** | Service scaffolding for a second service | SQL relational schema, join tables vs. arrays | [ ] PRs 01 and 02 merged |
 | **4** | Album-artist relationship validation | Artist CRUD, pagination | [ ] PRs 03 and 04 merged |
 | **5** | Cursor pagination on a second dataset shape | Song CRUD, then a Protobuf event contract | [ ] PRs 05 and 06 merged |
@@ -58,7 +58,6 @@ direct result, not because scope was cut.
 
 - [ ] I can list the six files that conflicted in E1-SS-06 and explain, for each, why the resolution went the way it did (kept ours, kept theirs, or merged both).
 - [ ] I can explain why passing `go build` wasn't enough to call the merge done, and what the smoke test actually proved that the build alone didn't.
-- [ ] I know exactly what's left before E1-SS-06 ships: merge into `main`, push to `origin`. Nothing else.
 
 **Most important concept learned:**
 
@@ -80,7 +79,7 @@ direct result, not because scope was cut.
 
 ## Completion Evidence
 
-- [ ] E1-SS-06 merged into `main` and pushed; E1-SS-12 merged via PR.
+- [x] E1-SS-06 merged into `main` (PR #22); E1-SS-12 merged via PR (#18).
 - [ ] Links to all remaining merged pull requests are recorded.
 - [ ] Unit, integration, race, and end-to-end test results are recorded for both phases.
 - [ ] Migration up/down output recorded for both `music-identity-gatekeeper` (through `000009`) and `muse_catalog`.
