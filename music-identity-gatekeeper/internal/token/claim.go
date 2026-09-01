@@ -55,6 +55,7 @@ func NewAccessTokenClaims(
 
 		// Standard JWT claims.
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID: uuid.NewString(),
 
 			// IssuedAt records when the access token was created.
 			//
