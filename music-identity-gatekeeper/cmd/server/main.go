@@ -21,8 +21,10 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/auth"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/db"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/health"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/httplog"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/metrics"
 	oauthflow "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/oauth"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/playlist"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/preference"
@@ -71,6 +73,11 @@ func main() {
 	}
 	defer func() { _ = redisClient.Close() }()
 	blacklist := revocation.NewStore(redisClient)
+	serviceMetrics := metrics.New(pool)
+	healthChecks := []health.Check{
+		{Name: "postgres", Ping: pool.Ping},
+		{Name: "redis", Ping: func(ctx context.Context) error { return redisClient.Ping(ctx).Err() }},
+	}
 
 	userRepo := user.NewRepository(pool)
 	refreshRepo := refresh.NewRepository(pool)
@@ -97,12 +104,14 @@ func main() {
 			appLogger.Info("", "connected to Kafka broker(s): %v", brokerList)
 		}
 		cancel()
+		healthChecks = append(healthChecks, health.Check{Name: "kafka", Ping: kafkaPub.Ping})
 
 		pub = kafkaPub
 	} else {
 		pub = event.NoopPublisher{}
 		appLogger.Info("", "KAFKA_BROKERS not set, using NoopPublisher")
 	}
+	pub = serviceMetrics.InstrumentPublisher(pub)
 
 	emitter := event.NewEmitter(outbox, appLogger, pub)
 
@@ -161,8 +170,13 @@ func main() {
 
 	r := chi.NewRouter()
 	r.Use(reqid.Middleware)
-	r.Use(httplog.Middleware(appLogger))
+	r.Use(httplog.Middleware(appLogger, serviceMetrics))
 	authenticate := auth.AuthMiddleware(jwtService, appLogger, blacklist)
+	healthHandler := health.NewHandler(2*time.Second, healthChecks...)
+
+	r.Handle("/metrics", serviceMetrics.Handler())
+	r.Get("/health/live", healthHandler.Live)
+	r.Get("/health/ready", healthHandler.Ready)
 
 	r.Route("/auth", func(r chi.Router) {
 		r.Post("/register", authHandler.Register)
