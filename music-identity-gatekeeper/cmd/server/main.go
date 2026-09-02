@@ -26,7 +26,6 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/metrics"
 	oauthflow "github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/oauth"
-	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/playlist"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/preference"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/profile/profilepb"
@@ -164,10 +163,6 @@ func main() {
 	preferenceService := preference.NewService(preferenceRepo, appLogger, emitter)
 	preferenceHandler := preference.NewHandler(preferenceService, appLogger)
 
-	playlistRepo := playlist.NewRepository(pool)
-	playlistService := playlist.NewService(playlistRepo, appLogger)
-	playlistHandler := playlist.NewHandler(playlistService, appLogger)
-
 	r := chi.NewRouter()
 	r.Use(reqid.Middleware)
 	r.Use(httplog.Middleware(appLogger, serviceMetrics))
@@ -196,14 +191,6 @@ func main() {
 	r.With(authenticate).Get("/me/likes/songs", preferenceHandler.ListLikedSongs)
 	r.With(authenticate).Post("/me/following/artists/{artistID}", preferenceHandler.FollowArtist)
 	r.With(authenticate).Delete("/me/following/artists/{artistID}", preferenceHandler.UnfollowArtist)
-
-	r.With(authenticate).Post("/me/playlists", playlistHandler.Create)
-	r.With(authenticate).Get("/me/playlists", playlistHandler.List)
-	r.With(authenticate).Get("/me/playlists/{playlistID}", playlistHandler.Get)
-	r.With(authenticate).Patch("/me/playlists/{playlistID}", playlistHandler.Patch)
-	r.With(authenticate).Delete("/me/playlists/{playlistID}", playlistHandler.Delete)
-	r.With(authenticate).Post("/me/playlists/{playlistID}/songs/{songID}", playlistHandler.AddSong)
-	r.With(authenticate).Delete("/me/playlists/{playlistID}/songs/{songID}", playlistHandler.RemoveSong)
 
 	httpListener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
