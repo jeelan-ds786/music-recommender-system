@@ -32,3 +32,10 @@ message UserRegistered {
 message UserPreferenceUpdated {
   EventMetadata metadata = 1;
 }
+
+// PlaylistUpdated is published after every successful playlist mutation.
+message PlaylistUpdated {
+  EventMetadata metadata = 1;
+  string playlist_id = 2;
+  string operation = 3;
+}

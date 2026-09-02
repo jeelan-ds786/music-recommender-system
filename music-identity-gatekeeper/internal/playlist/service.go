@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/reqid"
 )
@@ -21,16 +23,33 @@ type Service interface {
 }
 
 type service struct {
-	repo Repository
-	log  *logger.Logger
+	repo    Repository
+	log     *logger.Logger
+	emitter playlistEventEmitter
 }
 
-// NewService leaves no emitter param — E1-SS-15 adds Kafka event
-// publishing later the same way preference.NewService grew one.
-func NewService(repo Repository, log *logger.Logger) Service {
-	return &service{
+type playlistEventEmitter interface {
+	EmitPlaylistUpdated(ctx context.Context, tx pgx.Tx, userID, playlistID, operation string) error
+}
+
+func NewService(repo Repository, log *logger.Logger, emitters ...playlistEventEmitter) Service {
+	svc := &service{
 		repo: repo,
 		log:  log,
+	}
+	if len(emitters) > 0 {
+		svc.emitter = emitters[0]
+	}
+	return svc
+}
+
+func (s *service) emitPlaylistUpdated(ctx context.Context, userID, playlistID uuid.UUID, operation string) {
+	if s.emitter == nil {
+		return
+	}
+	if err := s.emitter.EmitPlaylistUpdated(ctx, nil, userID.String(), playlistID.String(), operation); err != nil {
+		rid, _ := reqid.FromContext(ctx)
+		s.log.Error(rid, "failed to enqueue user.playlist.updated event: %v", err)
 	}
 }
 
@@ -60,6 +79,7 @@ func (s *service) Create(
 		s.log.Error(rid, "Ending Create for user_id=%s (failed: %v)", userID, err)
 		return nil, err
 	}
+	s.emitPlaylistUpdated(ctx, userID, p.ID, event.PlaylistOperationCreated)
 
 	s.log.Info(rid, "Ending Create for user_id=%s (playlist_id=%s created)", userID, p.ID)
 
@@ -143,6 +163,7 @@ func (s *service) Patch(
 		s.log.Error(rid, "Ending Patch for user_id=%s playlist_id=%s (failed: %v)", userID, playlistID, err)
 		return nil, err
 	}
+	s.emitPlaylistUpdated(ctx, userID, playlistID, event.PlaylistOperationUpdated)
 
 	s.log.Info(rid, "Ending Patch for user_id=%s playlist_id=%s (playlist updated)", userID, playlistID)
 
@@ -164,6 +185,7 @@ func (s *service) Delete(
 		s.log.Error(rid, "Ending Delete for user_id=%s playlist_id=%s (failed: %v)", userID, playlistID, err)
 		return err
 	}
+	s.emitPlaylistUpdated(ctx, userID, playlistID, event.PlaylistOperationDeleted)
 
 	s.log.Info(rid, "Ending Delete for user_id=%s playlist_id=%s (playlist deleted)", userID, playlistID)
 
@@ -185,6 +207,7 @@ func (s *service) AddSong(
 		s.log.Error(rid, "Ending AddSong for user_id=%s playlist_id=%s song_id=%s (failed: %v)", userID, playlistID, songID, err)
 		return err
 	}
+	s.emitPlaylistUpdated(ctx, userID, playlistID, event.PlaylistOperationSongAdded)
 
 	s.log.Info(rid, "Ending AddSong for user_id=%s playlist_id=%s song_id=%s (song added)", userID, playlistID, songID)
 
@@ -206,6 +229,7 @@ func (s *service) RemoveSong(
 		s.log.Error(rid, "Ending RemoveSong for user_id=%s playlist_id=%s song_id=%s (failed: %v)", userID, playlistID, songID, err)
 		return err
 	}
+	s.emitPlaylistUpdated(ctx, userID, playlistID, event.PlaylistOperationSongRemoved)
 
 	s.log.Info(rid, "Ending RemoveSong for user_id=%s playlist_id=%s song_id=%s (song removed)", userID, playlistID, songID)
 

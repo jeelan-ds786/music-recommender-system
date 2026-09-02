@@ -122,3 +122,35 @@ func (e *Emitter) EmitUserPreferenceUpdated(ctx context.Context, tx pgx.Tx, user
 	e.log.Debug(rid, "Ending EmitUserPreferenceUpdated for user_id=%s", userID)
 	return nil
 }
+
+func (e *Emitter) EmitPlaylistUpdated(ctx context.Context, tx pgx.Tx, userID, playlistID, operation string) error {
+	rid, _ := reqid.FromContext(ctx)
+
+	e.log.Debug(rid, "Starting EmitPlaylistUpdated for user_id=%s playlist_id=%s operation=%s", userID, playlistID, operation)
+
+	msg := &eventpb.PlaylistUpdated{
+		Metadata: &eventpb.EventMetadata{
+			EventId:       uuid.New().String(),
+			EventType:     TopicUserPlaylistUpdated,
+			SchemaVersion: 1,
+			OccurredAt:    timestamppb.New(time.Now().UTC()),
+			UserId:        userID,
+		},
+		PlaylistId: playlistID,
+		Operation:  operation,
+	}
+
+	payload, err := protojson.Marshal(msg)
+	if err != nil {
+		e.log.Error(rid, "Ending EmitPlaylistUpdated for playlist_id=%s (failed to marshal: %v)", playlistID, err)
+		return err
+	}
+
+	if err := e.enqueueAndPublish(ctx, tx, TopicUserPlaylistUpdated, playlistID, payload); err != nil {
+		e.log.Error(rid, "Ending EmitPlaylistUpdated for playlist_id=%s (enqueue failed: %v)", playlistID, err)
+		return err
+	}
+
+	e.log.Debug(rid, "Ending EmitPlaylistUpdated for playlist_id=%s", playlistID)
+	return nil
+}

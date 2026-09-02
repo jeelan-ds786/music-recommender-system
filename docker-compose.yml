@@ -63,7 +63,8 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command: >
       "/opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.registered --partitions 1 --replication-factor 1 &&
-       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.preference.updated --partitions 1 --replication-factor 1"
+       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.preference.updated --partitions 1 --replication-factor 1 &&
+       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.playlist.updated --partitions 1 --replication-factor 1"
 
   identity-svc:
     build: ./music-identity-gatekeeper

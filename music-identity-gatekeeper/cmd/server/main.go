@@ -165,7 +165,7 @@ func main() {
 	preferenceHandler := preference.NewHandler(preferenceService, appLogger)
 
 	playlistRepo := playlist.NewRepository(pool)
-	playlistService := playlist.NewService(playlistRepo, appLogger)
+	playlistService := playlist.NewService(playlistRepo, appLogger, emitter)
 	playlistHandler := playlist.NewHandler(playlistService, appLogger)
 
 	r := chi.NewRouter()
