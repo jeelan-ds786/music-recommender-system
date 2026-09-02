@@ -39,6 +39,17 @@ func serve(
 	if shutdownErr != nil {
 		shutdownErr = errors.Join(shutdownErr, httpServer.Close())
 	}
+	// Shutdown only waits for listeners it had already registered by the
+	// time it was called. If ctx is canceled essentially immediately (as in
+	// TestServeShutsDownHTTPAndGRPC), httpServer.Serve(httpListener)'s
+	// goroutine may not have reached that bookkeeping yet — Shutdown then
+	// returns without closing anything, and the listener is closed later,
+	// asynchronously, by that goroutine's own early-return path once it
+	// finally runs. Close it again here so callers can rely on it being
+	// closed the moment serve() returns, not "eventually". Safe to call
+	// twice: Close on an already-closed listener just errors, which we
+	// ignore — it changes nothing we'd otherwise report.
+	_ = httpListener.Close()
 
 	grpcStopped := make(chan struct{})
 	go func() {
@@ -52,6 +63,11 @@ func serve(
 		<-grpcStopped
 		shutdownErr = errors.Join(shutdownErr, shutdownCtx.Err())
 	}
+	// Same race as above, for the same reason, in grpc-go's Server.Serve /
+	// GracefulStop (s.serveWG.Add(1) similarly only happens after the
+	// already-stopped check, so GracefulStop's s.serveWG.Wait() can miss a
+	// late-scheduled Serve goroutine too).
+	_ = grpcListener.Close()
 
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) && !errors.Is(serveErr, grpc.ErrServerStopped) {
 		shutdownErr = errors.Join(shutdownErr, serveErr)
