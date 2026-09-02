@@ -37,7 +37,7 @@ func NewEmitter(outbox *Outbox, log *logger.Logger, publisher Publisher) *Emitte
 func (e *Emitter) enqueueAndPublish(ctx context.Context, tx pgx.Tx, topic, key string, payload []byte) error {
 	rid, _ := reqid.FromContext(ctx)
 
-	e.log.Debug(rid, "formed payload for topic=%s key=%s: %s", topic, key, payload)
+	e.log.Debug(rid, "formed payload for topic=%s key=%s size_bytes=%d", topic, key, len(payload))
 
 	id, err := e.outbox.Enqueue(ctx, tx, topic, key, payload)
 	if err != nil {
