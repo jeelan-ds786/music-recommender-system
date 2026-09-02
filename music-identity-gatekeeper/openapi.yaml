@@ -6,8 +6,7 @@ info:
     route currently wired in cmd/server/main.go. The internal gRPC API
     (identity.v1.IdentityService, port 50051) is documented in README.md —
     OpenAPI doesn't model gRPC. POST /auth/logout is planned (E1-SS-06) but
-    not yet merged, so it is intentionally absent from this spec. Playlist
-    mutations do not yet publish Kafka events (that's E1-SS-15).
+    not yet merged, so it is intentionally absent from this spec.
   version: "0.1.0"
 servers:
   - url: http://localhost:8080
@@ -22,8 +21,6 @@ tags:
     description: Listener profile
   - name: preferences
     description: Onboarding, likes, follows
-  - name: playlists
-    description: Playlist CRUD and song membership (E1-SS-14)
 
 paths:
   /auth/register:
@@ -426,256 +423,6 @@ paths:
                 $ref: "#/components/schemas/Error"
               example: { error: FOLLOW_NOT_FOUND }
 
-  /me/playlists:
-    post:
-      tags: [playlists]
-      summary: Create a playlist
-      security: [{ bearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreatePlaylistRequest"
-      responses:
-        "201":
-          description: Playlist created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataEnvelope"
-              example:
-                data:
-                  id: "9c9a1e2b-0000-4000-8000-000000000001"
-                  name: "Road Trip"
-                  description: "Songs for the drive"
-                  is_public: true
-                  created_at: "2026-09-02T10:00:00Z"
-                  updated_at: "2026-09-02T10:00:00Z"
-        "400":
-          description: name missing or too long, or description too long
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ValidationError"
-              example: { error: NAME_REQUIRED, field: name }
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    get:
-      tags: [playlists]
-      summary: List the authenticated user's playlists
-      description: >
-        Unpaginated — a user's own playlist count is small and bounded,
-        unlike GET /me/likes/songs. Ordered by created_at DESC.
-      security: [{ bearerAuth: [] }]
-      responses:
-        "200":
-          description: Array of playlists (no songs; use GET /me/playlists/{playlistID} for that)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataEnvelope"
-              example:
-                data:
-                  - id: "9c9a1e2b-0000-4000-8000-000000000001"
-                    name: "Road Trip"
-                    description: "Songs for the drive"
-                    is_public: true
-                    created_at: "2026-09-02T10:00:00Z"
-                    updated_at: "2026-09-02T10:00:00Z"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /me/playlists/{playlistID}:
-    get:
-      tags: [playlists]
-      summary: Get a playlist, including its songs
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: "#/components/parameters/PlaylistID"
-      responses:
-        "200":
-          description: Playlist with its songs, ordered by position
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataEnvelope"
-              example:
-                data:
-                  id: "9c9a1e2b-0000-4000-8000-000000000001"
-                  name: "Road Trip"
-                  description: "Songs for the drive"
-                  is_public: true
-                  created_at: "2026-09-02T10:00:00Z"
-                  updated_at: "2026-09-02T10:00:00Z"
-                  songs:
-                    - song_id: "3f2b1a00-0000-4000-8000-000000000002"
-                      position: 0
-                      added_at: "2026-09-02T10:05:00Z"
-        "400":
-          description: playlistID is not a valid UUID
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example: { error: INVALID_PLAYLIST_ID }
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: >
-            Playlist doesn't exist, or exists but isn't owned by the
-            caller — same response either way (anti-enumeration; never 403)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example: { error: PLAYLIST_NOT_FOUND }
-    patch:
-      tags: [playlists]
-      summary: Partially update a playlist
-      security: [{ bearerAuth: [] }]
-      description: >
-        Omitted fields are left unchanged (pointer-field patch semantics,
-        same COALESCE pattern as PATCH /me).
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PatchPlaylistRequest"
-      responses:
-        "200":
-          description: Updated playlist (same shape as GET /me/playlists/{playlistID}, without songs)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataEnvelope"
-        "400":
-          description: playlistID is not a valid UUID, or name/description too long
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ValidationError"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Playlist doesn't exist, or exists but isn't owned by the caller
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example: { error: PLAYLIST_NOT_FOUND }
-    delete:
-      tags: [playlists]
-      summary: Delete a playlist
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: "#/components/parameters/PlaylistID"
-      responses:
-        "200":
-          description: Deleted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataEnvelope"
-              example: { data: { status: deleted } }
-        "400":
-          description: playlistID is not a valid UUID
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example: { error: INVALID_PLAYLIST_ID }
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Playlist doesn't exist, or exists but isn't owned by the caller
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example: { error: PLAYLIST_NOT_FOUND }
-
-  /me/playlists/{playlistID}/songs/{songID}:
-    post:
-      tags: [playlists]
-      summary: Add a song to a playlist (idempotent)
-      description: >
-        Assigns the next position (max existing position + 1, or 0 for an
-        empty playlist). Adding a song already in the playlist is a no-op
-        that still returns 200 — it does not move or duplicate the song.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: "#/components/parameters/PlaylistID"
-        - $ref: "#/components/parameters/SongID"
-      responses:
-        "200":
-          description: Added (or already present — same response either way)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataEnvelope"
-              example: { data: { status: added } }
-        "400":
-          description: >
-            playlistID or songID is not a valid UUID — INVALID_PLAYLIST_ID
-            if playlistID fails to parse (checked first), otherwise
-            INVALID_SONG_ID
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example: { error: INVALID_SONG_ID }
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Playlist doesn't exist, or exists but isn't owned by the caller
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example: { error: PLAYLIST_NOT_FOUND }
-    delete:
-      tags: [playlists]
-      summary: Remove a song from a playlist
-      description: >
-        No position resequencing — gaps left behind are harmless since
-        ordering only ever reads ORDER BY position.
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: "#/components/parameters/PlaylistID"
-        - $ref: "#/components/parameters/SongID"
-      responses:
-        "200":
-          description: Removed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DataEnvelope"
-              example: { data: { status: removed } }
-        "400":
-          description: >
-            playlistID or songID is not a valid UUID — INVALID_PLAYLIST_ID
-            if playlistID fails to parse (checked first), otherwise
-            INVALID_SONG_ID
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example: { error: INVALID_SONG_ID }
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: >
-            Song was not in the playlist — also returned (rather than
-            PLAYLIST_NOT_FOUND) when the playlist doesn't exist or isn't
-            owned by the caller, since the delete is scoped through a
-            single ownership-joined query
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example: { error: SONG_NOT_IN_PLAYLIST }
-
 components:
   securitySchemes:
     bearerAuth:
@@ -691,11 +438,6 @@ components:
       schema: { type: string, format: uuid }
     ArtistID:
       name: artistID
-      in: path
-      required: true
-      schema: { type: string, format: uuid }
-    PlaylistID:
-      name: playlistID
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -802,19 +544,3 @@ components:
         followed_artist_ids:
           type: array
           items: { type: string, format: uuid }
-
-    CreatePlaylistRequest:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string, maxLength: 100 }
-        description: { type: string, maxLength: 1000, nullable: true }
-        is_public: { type: boolean, default: false }
-
-    PatchPlaylistRequest:
-      type: object
-      description: All fields optional; omit a key to leave it unchanged.
-      properties:
-        name: { type: string, maxLength: 100, nullable: true }
-        description: { type: string, maxLength: 1000, nullable: true }
-        is_public: { type: boolean, nullable: true }
