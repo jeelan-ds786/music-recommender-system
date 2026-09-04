@@ -7,9 +7,26 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
+	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event"
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/logger"
 )
+
+type emittedPlaylistEvent struct {
+	userID     string
+	playlistID string
+	operation  string
+}
+
+type fakePlaylistEmitter struct {
+	events []emittedPlaylistEvent
+}
+
+func (f *fakePlaylistEmitter) EmitPlaylistUpdated(_ context.Context, _ pgx.Tx, userID, playlistID, operation string) error {
+	f.events = append(f.events, emittedPlaylistEvent{userID: userID, playlistID: playlistID, operation: operation})
+	return nil
+}
 
 type fakeRepository struct {
 	playlist  *Playlist
@@ -187,5 +204,97 @@ func TestService_RemoveSong_PropagatesNotFound(t *testing.T) {
 	err := svc.RemoveSong(context.Background(), uuid.New(), uuid.New(), uuid.New())
 	if !errors.Is(err, ErrSongNotInPlaylist) {
 		t.Fatalf("expected ErrSongNotInPlaylist, got %v", err)
+	}
+}
+
+func TestService_MutationsEmitExactlyOnePlaylistUpdatedEvent(t *testing.T) {
+	userID := uuid.New()
+	playlistID := uuid.New()
+
+	tests := []struct {
+		name      string
+		operation string
+		mutate    func(Service) error
+	}{
+		{name: "create", operation: event.PlaylistOperationCreated, mutate: func(svc Service) error {
+			_, err := svc.Create(context.Background(), userID, CreateRequest{Name: "Mix"})
+			return err
+		}},
+		{name: "patch", operation: event.PlaylistOperationUpdated, mutate: func(svc Service) error {
+			name := "Renamed"
+			_, err := svc.Patch(context.Background(), userID, playlistID, PatchRequest{Name: &name})
+			return err
+		}},
+		{name: "delete", operation: event.PlaylistOperationDeleted, mutate: func(svc Service) error {
+			return svc.Delete(context.Background(), userID, playlistID)
+		}},
+		{name: "add song", operation: event.PlaylistOperationSongAdded, mutate: func(svc Service) error {
+			return svc.AddSong(context.Background(), userID, playlistID, uuid.New())
+		}},
+		{name: "remove song", operation: event.PlaylistOperationSongRemoved, mutate: func(svc Service) error {
+			return svc.RemoveSong(context.Background(), userID, playlistID, uuid.New())
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &fakeRepository{playlist: &Playlist{ID: playlistID, Name: "Mix"}}
+			emitter := &fakePlaylistEmitter{}
+			svc := NewService(repo, logger.New(logger.LevelNone), emitter)
+
+			if err := test.mutate(svc); err != nil {
+				t.Fatalf("mutation failed: %v", err)
+			}
+			if len(emitter.events) != 1 {
+				t.Fatalf("emitted %d events, want 1", len(emitter.events))
+			}
+
+			got := emitter.events[0]
+			if got.userID != userID.String() || got.playlistID != playlistID.String() || got.operation != test.operation {
+				t.Errorf("event = %+v, want user_id=%s playlist_id=%s operation=%s", got, userID, playlistID, test.operation)
+			}
+		})
+	}
+}
+
+func TestService_FailedMutationsEmitNoPlaylistUpdatedEvent(t *testing.T) {
+	userID := uuid.New()
+	playlistID := uuid.New()
+	wantErr := errors.New("db down")
+
+	mutations := []struct {
+		name   string
+		mutate func(Service) error
+	}{
+		{name: "create", mutate: func(svc Service) error {
+			_, err := svc.Create(context.Background(), userID, CreateRequest{Name: "Mix"})
+			return err
+		}},
+		{name: "patch", mutate: func(svc Service) error {
+			name := "Renamed"
+			_, err := svc.Patch(context.Background(), userID, playlistID, PatchRequest{Name: &name})
+			return err
+		}},
+		{name: "delete", mutate: func(svc Service) error { return svc.Delete(context.Background(), userID, playlistID) }},
+		{name: "add song", mutate: func(svc Service) error {
+			return svc.AddSong(context.Background(), userID, playlistID, uuid.New())
+		}},
+		{name: "remove song", mutate: func(svc Service) error {
+			return svc.RemoveSong(context.Background(), userID, playlistID, uuid.New())
+		}},
+	}
+
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			emitter := &fakePlaylistEmitter{}
+			svc := NewService(&fakeRepository{err: wantErr}, logger.New(logger.LevelNone), emitter)
+
+			if err := mutation.mutate(svc); !errors.Is(err, wantErr) {
+				t.Fatalf("error = %v, want %v", err, wantErr)
+			}
+			if len(emitter.events) != 0 {
+				t.Fatalf("emitted %d events, want 0", len(emitter.events))
+			}
+		})
 	}
 }

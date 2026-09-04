@@ -6,6 +6,89 @@ tiers, listener profiles, preferences (onboarding, likes, follows), and
 publishes domain events to Kafka. Exposes both an HTTP API and an internal
 gRPC API.
 
+
+## Role of this Repo
+
+
+The **Music Identity Gatekeeper** is the account and listener-profile service for the music recommendation platform. It answers two central questions:
+
+1. **Who is the listener?**
+2. **What does the platform know about their musical preferences?**
+
+### What It Does
+
+- Registers users with email and password
+- Authenticates users and issues JWT access and refresh tokens
+- Supports Google OAuth login
+- Refreshes, rotates, and revokes authentication tokens
+- Manages listener profiles, such as display name, country, language, and subscription tier
+- Records onboarding preferences, including favorite genres and languages
+- Tracks liked songs and followed artists
+- Provides listener information to internal recommendation services through gRPC
+- Publishes profile and preference changes to Kafka
+
+### Why the Recommendation System Needs It
+
+Recommendation engines need a stable listener identity and personalization context. For example:
+
+```text
+Listener logs in
+    ↓
+Likes songs and selects favorite genres
+    ↓
+Gatekeeper stores those preferences
+    ↓
+Kafka informs downstream services about changes
+    ↓
+Recommendation engines use the listener profile
+    ↓
+Listener receives personalized music
+```
+
+Without this service, the system could generate generic or trending recommendations, but it would not reliably know which listener made a request or what that listener prefers.
+
+### Main Interfaces
+
+**Public HTTP endpoints**
+
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/refresh`
+- `GET /auth/google`
+- `GET /auth/google/callback`
+
+**Authenticated HTTP endpoints**
+
+- `GET /me` to retrieve the listener profile
+- `PATCH /me` to update it
+- `POST /me/onboarding`
+- Like and unlike songs
+- Follow and unfollow artists
+- Log out and revoke tokens on the current branch
+
+**Internal gRPC API**
+
+Other backend services can request a compact listener profile containing:
+
+- Subscription tier
+- Preferred genres
+- Preferred languages
+- Followed artists
+- Liked-song count
+
+### Supporting Technology
+
+- **PostgreSQL:** users, profiles, preferences, refresh tokens, and durable events
+- **Redis:** OAuth state and access-token revocation
+- **Kafka:** broadcasts user registration and preference changes
+- **JWT:** authenticates HTTP requests
+- **Go:** implements the service
+- **HTTP and gRPC:** serve external clients and internal services respectively
+
+In short, this service is the platform’s **identity, authentication, and listener-personalization foundation**. More detail is available in `README.md` and the HTTP contract is documented in `openapi.yaml`.
+
+
+
 ## Prerequisites
 
 - Go 1.26+

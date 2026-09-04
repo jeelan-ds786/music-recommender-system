@@ -3,9 +3,13 @@ package event
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/segmentio/kafka-go"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event/eventpb"
@@ -97,6 +101,90 @@ func TestEmitter_EmitUserPreferenceUpdated_EnqueuesCorrectPayload(t *testing.T) 
 	}
 	if msg.Metadata.EventType != TopicUserPreferenceUpdated {
 		t.Errorf("EventType = %q, want %q", msg.Metadata.EventType, TopicUserPreferenceUpdated)
+	}
+}
+
+func TestEmitter_EmitPlaylistUpdated_PublishesCorrectPayload(t *testing.T) {
+	outbox := setupOutboxTestDB(t)
+	fake := &FakePublisher{}
+	emitter := NewEmitter(outbox, logger.New(logger.LevelNone), fake)
+	userID := uuid.New().String()
+	playlistID := uuid.New().String()
+
+	if err := emitter.EmitPlaylistUpdated(context.Background(), nil, userID, playlistID, PlaylistOperationSongAdded); err != nil {
+		t.Fatalf("EmitPlaylistUpdated failed: %v", err)
+	}
+	if len(fake.Published) != 1 {
+		t.Fatalf("published %d messages, want 1", len(fake.Published))
+	}
+
+	published := fake.Published[0]
+	if published.Topic != TopicUserPlaylistUpdated || published.Key != playlistID {
+		t.Errorf("published topic=%q key=%q, want topic=%q key=%q", published.Topic, published.Key, TopicUserPlaylistUpdated, playlistID)
+	}
+
+	var msg eventpb.PlaylistUpdated
+	if err := protojson.Unmarshal(published.Value, &msg); err != nil {
+		t.Fatalf("failed to unmarshal JSON payload: %v", err)
+	}
+	if msg.GetMetadata().GetUserId() != userID || msg.GetMetadata().GetEventType() != TopicUserPlaylistUpdated {
+		t.Errorf("metadata = %+v", msg.GetMetadata())
+	}
+	if msg.GetPlaylistId() != playlistID || msg.GetOperation() != PlaylistOperationSongAdded {
+		t.Errorf("playlist_id=%q operation=%q, want playlist_id=%q operation=%q", msg.GetPlaylistId(), msg.GetOperation(), playlistID, PlaylistOperationSongAdded)
+	}
+}
+
+func TestEmitter_EmitPlaylistUpdated_DeliversToKafka(t *testing.T) {
+	brokersEnv := os.Getenv("KAFKA_BROKERS")
+	if brokersEnv == "" {
+		t.Skip("KAFKA_BROKERS not set, skipping integration test")
+	}
+
+	outbox := setupOutboxTestDB(t)
+	brokers := strings.Split(brokersEnv, ",")
+	publisher := NewKafkaPublisher(brokers, logger.New(logger.LevelNone))
+	t.Cleanup(func() { _ = publisher.Close() })
+
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:   brokers,
+		Topic:     TopicUserPlaylistUpdated,
+		Partition: 0,
+		MinBytes:  1,
+		MaxBytes:  10e6,
+	})
+	t.Cleanup(func() { _ = reader.Close() })
+	if err := reader.SetOffset(kafka.FirstOffset); err != nil {
+		t.Fatalf("SetOffset failed: %v", err)
+	}
+
+	userID := uuid.New().String()
+	playlistID := uuid.New().String()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	emitter := NewEmitter(outbox, logger.New(logger.LevelNone), publisher)
+	if err := emitter.EmitPlaylistUpdated(ctx, nil, userID, playlistID, PlaylistOperationCreated); err != nil {
+		t.Fatalf("EmitPlaylistUpdated failed: %v", err)
+	}
+
+	var (
+		message kafka.Message
+		err     error
+	)
+	for string(message.Key) != playlistID {
+		message, err = reader.ReadMessage(ctx)
+		if err != nil {
+			t.Fatalf("ReadMessage failed: %v", err)
+		}
+	}
+
+	var eventMessage eventpb.PlaylistUpdated
+	if err := protojson.Unmarshal(message.Value, &eventMessage); err != nil {
+		t.Fatalf("failed to unmarshal delivered payload: %v", err)
+	}
+	if eventMessage.GetMetadata().GetUserId() != userID || eventMessage.GetPlaylistId() != playlistID || eventMessage.GetOperation() != PlaylistOperationCreated {
+		t.Errorf("delivered event = %+v", &eventMessage)
 	}
 }
 

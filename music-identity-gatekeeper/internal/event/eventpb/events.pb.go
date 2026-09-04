@@ -204,6 +204,67 @@ func (x *UserPreferenceUpdated) GetMetadata() *EventMetadata {
 	return nil
 }
 
+// PlaylistUpdated is published after every successful playlist mutation.
+type PlaylistUpdated struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Metadata      *EventMetadata         `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	PlaylistId    string                 `protobuf:"bytes,2,opt,name=playlist_id,json=playlistId,proto3" json:"playlist_id,omitempty"`
+	Operation     string                 `protobuf:"bytes,3,opt,name=operation,proto3" json:"operation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlaylistUpdated) Reset() {
+	*x = PlaylistUpdated{}
+	mi := &file_identity_v1_events_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlaylistUpdated) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlaylistUpdated) ProtoMessage() {}
+
+func (x *PlaylistUpdated) ProtoReflect() protoreflect.Message {
+	mi := &file_identity_v1_events_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlaylistUpdated.ProtoReflect.Descriptor instead.
+func (*PlaylistUpdated) Descriptor() ([]byte, []int) {
+	return file_identity_v1_events_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *PlaylistUpdated) GetMetadata() *EventMetadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *PlaylistUpdated) GetPlaylistId() string {
+	if x != nil {
+		return x.PlaylistId
+	}
+	return ""
+}
+
+func (x *PlaylistUpdated) GetOperation() string {
+	if x != nil {
+		return x.Operation
+	}
+	return ""
+}
+
 var File_identity_v1_events_proto protoreflect.FileDescriptor
 
 const file_identity_v1_events_proto_rawDesc = "" +
@@ -221,7 +282,12 @@ const file_identity_v1_events_proto_rawDesc = "" +
 	"\bmetadata\x18\x01 \x01(\v2\x1a.identity.v1.EventMetadataR\bmetadata\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\"O\n" +
 	"\x15UserPreferenceUpdated\x126\n" +
-	"\bmetadata\x18\x01 \x01(\v2\x1a.identity.v1.EventMetadataR\bmetadataBkZigithub.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event/eventpb;eventpbb\x06proto3"
+	"\bmetadata\x18\x01 \x01(\v2\x1a.identity.v1.EventMetadataR\bmetadata\"\x88\x01\n" +
+	"\x0fPlaylistUpdated\x126\n" +
+	"\bmetadata\x18\x01 \x01(\v2\x1a.identity.v1.EventMetadataR\bmetadata\x12\x1f\n" +
+	"\vplaylist_id\x18\x02 \x01(\tR\n" +
+	"playlistId\x12\x1c\n" +
+	"\toperation\x18\x03 \x01(\tR\toperationBkZigithub.com/jeelan-ds786/music-recommender-system/music-identity-gatekeeper/internal/event/eventpb;eventpbb\x06proto3"
 
 var (
 	file_identity_v1_events_proto_rawDescOnce sync.Once
@@ -235,22 +301,24 @@ func file_identity_v1_events_proto_rawDescGZIP() []byte {
 	return file_identity_v1_events_proto_rawDescData
 }
 
-var file_identity_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_identity_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_identity_v1_events_proto_goTypes = []any{
 	(*EventMetadata)(nil),         // 0: identity.v1.EventMetadata
 	(*UserRegistered)(nil),        // 1: identity.v1.UserRegistered
 	(*UserPreferenceUpdated)(nil), // 2: identity.v1.UserPreferenceUpdated
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(*PlaylistUpdated)(nil),       // 3: identity.v1.PlaylistUpdated
+	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
 }
 var file_identity_v1_events_proto_depIdxs = []int32{
-	3, // 0: identity.v1.EventMetadata.occurred_at:type_name -> google.protobuf.Timestamp
+	4, // 0: identity.v1.EventMetadata.occurred_at:type_name -> google.protobuf.Timestamp
 	0, // 1: identity.v1.UserRegistered.metadata:type_name -> identity.v1.EventMetadata
 	0, // 2: identity.v1.UserPreferenceUpdated.metadata:type_name -> identity.v1.EventMetadata
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 3: identity.v1.PlaylistUpdated.metadata:type_name -> identity.v1.EventMetadata
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_identity_v1_events_proto_init() }
@@ -264,7 +332,7 @@ func file_identity_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_identity_v1_events_proto_rawDesc), len(file_identity_v1_events_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
