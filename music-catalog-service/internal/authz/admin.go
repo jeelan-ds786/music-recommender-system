@@ -12,6 +12,11 @@ const AdminKeyHeader = "X-Admin-Key"
 func AdminKeyMiddleware(adminKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			providedKey := r.Header.Get(AdminKeyHeader)
 			if adminKey == "" || subtle.ConstantTimeCompare([]byte(providedKey), []byte(adminKey)) != 1 {
 				response.Error(w, http.StatusUnauthorized, "unauthorized")
