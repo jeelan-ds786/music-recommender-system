@@ -57,6 +57,5 @@ func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
 	response.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

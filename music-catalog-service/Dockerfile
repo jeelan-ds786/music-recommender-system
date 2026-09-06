@@ -5,6 +5,8 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o catalog-svc ./cmd/server
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:3.22
+RUN addgroup -S catalog && adduser -S catalog -G catalog
 COPY --from=builder /app/catalog-svc /catalog-svc
+USER catalog
 ENTRYPOINT ["/catalog-svc"]

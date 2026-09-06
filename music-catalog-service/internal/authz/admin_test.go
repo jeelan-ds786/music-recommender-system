@@ -11,12 +11,14 @@ func TestAdminKeyMiddleware(t *testing.T) {
 		name       string
 		configured string
 		provided   string
+		method     string
 		wantStatus int
 	}{
 		{name: "valid key", configured: "test-admin-key", provided: "test-admin-key", wantStatus: http.StatusNoContent},
 		{name: "missing key", configured: "test-admin-key", wantStatus: http.StatusUnauthorized},
 		{name: "incorrect key", configured: "test-admin-key", provided: "wrong-key", wantStatus: http.StatusUnauthorized},
 		{name: "empty configured key", wantStatus: http.StatusUnauthorized},
+		{name: "public GET", configured: "test-admin-key", method: http.MethodGet, wantStatus: http.StatusNoContent},
 	}
 
 	for _, test := range tests {
@@ -25,7 +27,11 @@ func TestAdminKeyMiddleware(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			})
 			handler := AdminKeyMiddleware(test.configured)(next)
-			request := httptest.NewRequest(http.MethodPost, "/artists", nil)
+			method := test.method
+			if method == "" {
+				method = http.MethodPost
+			}
+			request := httptest.NewRequest(method, "/artists", nil)
 			if test.provided != "" {
 				request.Header.Set(AdminKeyHeader, test.provided)
 			}

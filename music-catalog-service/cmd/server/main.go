@@ -62,13 +62,11 @@ func main() {
 
 func newRouter(database databasePinger, adminKey string) http.Handler {
 	router := chi.NewRouter()
+	router.Use(authz.AdminKeyMiddleware(adminKey))
 	healthHandler := health.NewHandler(2*time.Second, health.Check{Name: "postgres", Ping: database.Ping})
 
 	router.Get("/health/live", healthHandler.Live)
 	router.Get("/health/ready", healthHandler.Ready)
-
-	// Write routes added by catalog resources use this middleware; reads remain public.
-	_ = authz.AdminKeyMiddleware(adminKey)
 
 	return router
 }
