@@ -49,7 +49,9 @@ func TestServeShutsDownWhenContextIsCanceled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener.Close()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

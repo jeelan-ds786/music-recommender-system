@@ -107,7 +107,6 @@ func TestIngestSingleContextTooLargeFromDB(t *testing.T) {
 
 func TestIngestBatchContextTooLargeFromDBPointsAtIndex(t *testing.T) {
 	repo := newFakeRepository()
-	svc := NewService(repo, logger.New(logger.LevelNone))
 	userID := uuid.New()
 
 	good := validRequest()
@@ -117,7 +116,7 @@ func TestIngestBatchContextTooLargeFromDBPointsAtIndex(t *testing.T) {
 	// making the fake repository fail starting from its second call.
 	calls := 0
 	failingRepo := &failOnCallRepository{fakeRepository: repo, failOnCall: 2, err: ErrContextTooLarge, calls: &calls}
-	svc = NewService(failingRepo, logger.New(logger.LevelNone))
+	svc := NewService(failingRepo, logger.New(logger.LevelNone))
 
 	results, validationErr, err := svc.IngestBatch(context.Background(), userID, batch)
 	if results != nil || err != nil {
