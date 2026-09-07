@@ -17,7 +17,7 @@ The detailed contracts, estimates, and acceptance criteria are in [Sprint3_TODOS
 | Scope | Complete and merged | Open/in review | Not complete |
 | --- | --- | --- | --- |
 | Epic 1 | Implementation through playlists and playlist events | None identified | Historical `v0.1.0` release evidence/tag |
-| Epic 2 | Catalog scaffold exists on branches/base history | PR #30; overlapping PR #29 | Remaining catalog schema/features, events, gRPC, docs, E2E/release |
+| Epic 2 | Catalog scaffold merged through PR #29 and hardened by PR #30 | None | Remaining catalog schema/features, events, gRPC, docs, E2E/release |
 | Epic 3 | None | None | Entire bounded Sprint 3 scope |
 | Epic 4 | Kafka bootstrap and identity producers are reusable foundations | None | Consumer runtime, retry/DLQ, replay, platform observability |
 
@@ -40,8 +40,8 @@ The detailed contracts, estimates, and acceptance criteria are in [Sprint3_TODOS
 
 | Status | ID | Story | Owner | Estimate | Dependencies | PR | Evidence |
 | --- | --- | --- | --- | ---: | --- | --- | --- |
-| [ ] | S3-GATE-01 | Resolve catalog scaffold overlap | A+B | 4h | None | | |
-| [ ] | E3-SS-01 | Playback scaffold, schema, contracts | B | 10h | S3-GATE-01 | | |
+| [x] | S3-GATE-01 | Resolve catalog scaffold overlap | A+B | 4h | None | [#29](https://github.com/jeelan-ds786/music-recommender-system/pull/29), [#30](https://github.com/jeelan-ds786/music-recommender-system/pull/30) | Both merged in order; local acceptance suite passed on `main` at `81d620b`. |
+| [~] | E3-SS-01 | Playback scaffold, schema, contracts | B | 10h | S3-GATE-01 | Pending | Implemented locally; all acceptance checks pass on `main` plus the working tree. Awaiting PR review and merge. |
 | [ ] | E3-SS-02 | Authenticated single/batch ingestion | A | 8h | E3-SS-01 | | |
 | [ ] | E3-SS-03 | Session semantics and integrity | A | 7h | E3-SS-02 | | |
 | [ ] | E4-SS-01 | Topic topology and versioned contracts | B | 6h | E3-SS-01 | | |
@@ -61,21 +61,46 @@ The detailed contracts, estimates, and acceptance criteria are in [Sprint3_TODOS
 
 **Required result:** catalog overlap has one disposition; playback schema/scaffold PR is open.
 
-- [ ] Compare PR #29 and PR #30 against current `main`.
-- [ ] Preserve unique behavior, merge the authoritative E2-SS-02 path, and close only proven duplication.
-- [ ] Record unresolved Epic 2 stories in backlog.
-- [ ] B creates playback module, database, migrations, and domain contracts.
+- [x] Compare PR #29 and PR #30 against current `main`.
+- [x] Preserve unique behavior and record the authoritative merged sequence.
+- [x] Record unresolved Epic 2 stories in backlog.
+- [x] B creates playback module, database, migrations, and domain contracts.
 - [ ] A writes ingestion/auth contract tests against agreed DTOs.
-- [ ] Confirm no cross-database foreign keys.
+- [x] Confirm the reviewed schema contract contains no cross-database foreign keys.
 
 **End-of-day evidence:**
 
-- PR(s):
-- Tests/commands:
-- Actual result:
-- Blocker and owner:
-- Handoff:
-- Buffer consumed:
+- PR(s): [#29](https://github.com/jeelan-ds786/music-recommender-system/pull/29) merged first as commit `985d2ed`; [#30](https://github.com/jeelan-ds786/music-recommender-system/pull/30) merged next as commit `8534e2d`.
+- Tests/commands: `git log --left-right --cherry-pick origin/pr-30...origin/pr-29`; merged-delta review; `go vet ./...`; `go test -race ./...`; `docker compose config --quiet`; `docker build -q music-catalog-service`.
+- Actual result: PR #29 supplied the initial catalog service and PR #30 retained it while adding the E2-SS-02 hardening delta. Both PR check suites were green; all local acceptance commands passed on `main` at `81d620b`. Exactly one final `music-catalog-service` implementation exists.
+- Blocker and owner: Playback scaffold, migrations, and executable contract tests are not started; Developer A and Developer B retain their assigned Day 1 work.
+- Handoff: Implement the reviewed contract below in E3-SS-01, then write E3-SS-02 handler/service tests against those types before endpoint logic.
+- Buffer consumed: Record at end of Day 1; the evidence pass itself did not require recovery work.
+
+**E3-SS-01 implementation evidence:**
+
+- Files: `music-playback-service` module, playback/outbox migrations, health endpoints, Docker image, environment example, documentation, root Compose services, and dedicated CI jobs.
+- Migration result: migrations 1 and 2 applied, rolled back, and reapplied on a fresh `muse_playback` database. PostgreSQL reported zero foreign keys on `playback_events`; required unique and query indexes were present.
+- Constraint result: PostgreSQL rejected unsupported event types, negative positions, negative durations, and ledger updates. The append-only trigger passed its direct database check.
+- Health result: with PostgreSQL available, liveness/readiness returned `200`; after stopping PostgreSQL, liveness remained `200` and readiness returned `503` with `postgres` identified as failed.
+- Runtime result: Compose built and booted the service on port 8082 as non-root user `playback`; Docker SIGTERM produced exit code 0; the stack was restored healthy afterward.
+- Quality result: `gofmt`, `go mod tidy -diff`, `go mod verify`, `go vet ./...`, `go build ./cmd/server`, and `go test -race ./...` passed. `docker compose config --quiet` passed. Editor diagnostics reported no errors.
+- Remaining gate: open a PR, obtain review, run GitHub CI, and merge before changing E3-SS-01 to `[x]` or incrementing the merged-story count.
+
+#### Day 1 ingestion and schema contract review
+
+| Boundary | Reviewed contract | Verification target |
+| --- | --- | --- |
+| Authentication | The request has no trusted `user_id`; middleware supplies the verified JWT subject to the application service. | A body field cannot override identity; missing, invalid, or expired JWT returns `401`. |
+| Single ingestion | `POST /v1/playback/events` accepts a client UUID, song UUID, session UUID, event type, event timestamp, position, optional duration, device type, and bounded context. | A valid new event returns `202` and its server event ID; retry returns the existing result. |
+| Batch ingestion | `POST /v1/playback/events:batch` accepts at most 100 events and returns one deterministic result per input in input order. | Malformed requests fail atomically; valid duplicates are idempotent successes. |
+| Event identity | `client_event_id` is client-generated; `(user_id, client_event_id)` is unique. The server owns the ledger event ID. | Concurrent retries create one ledger row and one outbox record. |
+| Time semantics | `occurred_at` is client event time and `ingested_at` is server time. Events over 24 hours in the future are rejected; late events are retained. | Tests distinguish future rejection from accepted late/out-of-order telemetry. |
+| Value constraints | Event type is one of `play`, `pause`, `seek`, `skip`, `replay`, or `complete`; position and duration are non-negative; context is at most 4 KiB. | Database constraints backstop transport validation. |
+| Service ownership | `user_id` and `song_id` are opaque UUID references. Playback owns `playback_events` and `outbox_events`; no foreign key crosses service databases. | Fresh migration up/down succeeds without identity or catalog database access. |
+| Transaction boundary | A newly accepted ledger row and its versioned outbox event commit atomically. Duplicate acceptance creates neither a second ledger row nor a second outbox event. | Transaction-failure and duplicate-concurrency tests prove the invariant. |
+
+**Schema review disposition:** approved for E3-SS-01 implementation. Required indexes are unique `(user_id, client_event_id)`, `(user_id, occurred_at)`, and `(session_id, occurred_at)`. The append-only ledger and transactional outbox remain playback-owned.
 
 ### Day 2 - Ingestion and Kafka contracts
 
@@ -270,7 +295,7 @@ Update daily.
 | Protected buffer | 10 | 10 |
 | P0 stories blocked over 1 day | 0 | 0 |
 | Open P0 PRs older than 1 day | 0 | 0 |
-| Stories merged | 12 | 0 |
+| Stories merged | 12 | 1 |
 | E2E clean passes | 2 | 0 |
 | Untriaged spillover items | 0 | 0 |
 

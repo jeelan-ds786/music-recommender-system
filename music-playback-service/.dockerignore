@@ -1,0 +1,4 @@
+.git
+.env
+coverage.out
+playback-svc
