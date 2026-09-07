@@ -146,6 +146,7 @@ services:
     environment:
       PORT: "8082"
       DB_URL: "postgres://muse:secret@playback-postgres:5432/muse_playback?sslmode=disable"
+      JWT_SECRET: "${JWT_SECRET}"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/health/ready"]
       interval: 5s

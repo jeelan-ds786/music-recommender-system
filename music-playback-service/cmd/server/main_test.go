@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/logger"
 )
 
 type stubDatabase struct {
@@ -19,7 +21,7 @@ func (database stubDatabase) Ping(context.Context) error {
 }
 
 func TestLiveDoesNotCheckPostgres(t *testing.T) {
-	router := newRouter(stubDatabase{err: errors.New("database unavailable")})
+	router := newRouter(stubDatabase{err: errors.New("database unavailable")}, nil, "test-secret", logger.New(logger.LevelNone))
 	request := httptest.NewRequest(http.MethodGet, "/health/live", nil)
 	response := httptest.NewRecorder()
 
@@ -31,7 +33,7 @@ func TestLiveDoesNotCheckPostgres(t *testing.T) {
 }
 
 func TestReadyReportsPostgresFailure(t *testing.T) {
-	router := newRouter(stubDatabase{err: errors.New("database unavailable")})
+	router := newRouter(stubDatabase{err: errors.New("database unavailable")}, nil, "test-secret", logger.New(logger.LevelNone))
 	request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
 	response := httptest.NewRecorder()
 

@@ -1,0 +1,2571 @@
+{
+  "info": {
+    "name": "music-playback-service (E3-SS-02)",
+    "description": "Manual/scripted verification for POST /v1/playback/events and :batch, added by E3-SS-02. By default (mintOwnToken=true) it mints its own HS256 tokens via a collection-level pre-request script (CryptoJS), so it never needs music-identity-gatekeeper running \u2014 jwtSecret just has to match whatever JWT_SECRET the target playback-service instance was started with. Set mintOwnToken=false to instead run both services locally (matching JWT_SECRET in each's .env) and use a REAL token from music-identity-gatekeeper's own Postman collection's Login request, or POST {{migUrl}}/auth/login by hand \u2014 paste it into the accessToken variable yourself and this collection leaves it alone. Full narrative test plan: Docs/tickets/E3-SS-02/TEST_PLAN.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Mints two fresh HS256 access tokens before every request in this",
+          "// collection \u2014 {{accessToken}} for userIdA, {{accessTokenB}} for userIdB.",
+          "// jwtSecret MUST equal the running music-playback-service's JWT_SECRET",
+          "// (and, in a real deployment, music-identity-gatekeeper's \u2014 they must",
+          "// share one secret since playback only verifies, never issues, tokens).",
+          "// This collection deliberately does NOT depend on identity-gatekeeper",
+          "// being up: the algorithm below (base64url header/payload + HMAC-SHA256)",
+          "// is the exact same one music-identity-gatekeeper/internal/token uses,",
+          "// independently re-verified against a live playback-service instance",
+          "// using Node's built-in crypto module before this collection was written.",
+          "const CryptoJS = require('crypto-js');",
+          "",
+          "function base64url(wordArrayOrBase64) {",
+          "    const base64 = (typeof wordArrayOrBase64 === 'string')",
+          "        ? wordArrayOrBase64",
+          "        : CryptoJS.enc.Base64.stringify(wordArrayOrBase64);",
+          "    return base64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+          "}",
+          "",
+          "function base64urlJSON(obj) {",
+          "    return base64url(CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(JSON.stringify(obj))));",
+          "}",
+          "",
+          "function mint(secret, userId, expiresInSeconds) {",
+          "    const header = { alg: 'HS256', typ: 'JWT' };",
+          "    const now = Math.floor(Date.now() / 1000);",
+          "    const payload = { user_id: userId, tier: 'free', exp: now + expiresInSeconds, iat: now };",
+          "",
+          "    const encodedHeader = base64urlJSON(header);",
+          "    const encodedPayload = base64urlJSON(payload);",
+          "    const signingInput = encodedHeader + '.' + encodedPayload;",
+          "    const signature = CryptoJS.HmacSHA256(signingInput, secret);",
+          "",
+          "    return signingInput + '.' + base64url(signature);",
+          "}",
+          "",
+          "// Set collection variable mintOwnToken to \"false\" to use a REAL token",
+          "// from a running music-identity-gatekeeper instead (e.g. via its own",
+          "// Postman collection's \"2. Login\" request, or POST {{migUrl}}/auth/login",
+          "// by hand) \u2014 paste it into the accessToken variable yourself and this",
+          "// script will leave it alone. Folder 1 (\"Auth - Negative\")'s wrong-secret",
+          "// and expired-token requests always self-mint regardless of this flag,",
+          "// since those scenarios are meaningless against a real valid token.",
+          "// Folder 4 (\"Identity & Per-User Scoping\") needs a second real user's",
+          "// token in accessTokenB to run against a real identity-gatekeeper \u2014 not",
+          "// automated here; register a second user by hand if you want that folder",
+          "// to use real tokens too, or just leave mintOwnToken=true for it.",
+          "if (pm.collectionVariables.get('mintOwnToken') !== 'false') {",
+          "    const secret = pm.collectionVariables.get('jwtSecret');",
+          "    pm.collectionVariables.set('accessToken', mint(secret, pm.collectionVariables.get('userIdA'), 3600));",
+          "    pm.collectionVariables.set('accessTokenB', mint(secret, pm.collectionVariables.get('userIdB'), 3600));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "pbUrl",
+      "value": "http://localhost:8082",
+      "description": "music-playback-service base URL."
+    },
+    {
+      "key": "migUrl",
+      "value": "http://localhost:7001",
+      "description": "music-identity-gatekeeper base URL \u2014 only used as a reference/reminder for the real-token workflow (mintOwnToken=false); this collection never calls it itself."
+    },
+    {
+      "key": "mintOwnToken",
+      "value": "true",
+      "description": "\"true\" (default): self-mint both HS256 tokens every request, no identity-gatekeeper needed. \"false\": leave accessToken/accessTokenB alone so you can paste in a real token from identity-gatekeeper's login flow."
+    },
+    {
+      "key": "jwtSecret",
+      "value": "dev-secret-change-me",
+      "description": "MUST match the target playback-service instance's JWT_SECRET exactly (and, if mintOwnToken=false, music-identity-gatekeeper's too), or every request 401s with INVALID_ACCESS_TOKEN. Defaults to this repo's own local-dev placeholder value from both services' .env files."
+    },
+    {
+      "key": "userIdA",
+      "value": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    },
+    {
+      "key": "userIdB",
+      "value": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "accessTokenB",
+      "value": ""
+    },
+    {
+      "key": "songId",
+      "value": "",
+      "description": "Auto-generated on collection run start if empty; reused across requests so events/batches reference a consistent song."
+    },
+    {
+      "key": "sessionId",
+      "value": ""
+    },
+    {
+      "key": "sharedClientEventId",
+      "value": ""
+    },
+    {
+      "key": "firstEventId",
+      "value": ""
+    },
+    {
+      "key": "crossUserClientEventId",
+      "value": ""
+    },
+    {
+      "key": "userAEventId",
+      "value": ""
+    },
+    {
+      "key": "batchEventId1",
+      "value": ""
+    },
+    {
+      "key": "batchEventId2",
+      "value": ""
+    },
+    {
+      "key": "batch100",
+      "value": ""
+    },
+    {
+      "key": "batch101",
+      "value": ""
+    },
+    {
+      "key": "allOrNothingGoodId",
+      "value": ""
+    },
+    {
+      "key": "ctx4095",
+      "value": ""
+    },
+    {
+      "key": "ctx4096",
+      "value": ""
+    },
+    {
+      "key": "ctx4097",
+      "value": ""
+    },
+    {
+      "key": "futureOk",
+      "value": ""
+    },
+    {
+      "key": "futureBad",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health",
+      "item": [
+        {
+          "name": "1. Health Live",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{pbUrl}}/health/live",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "health",
+                "live"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('songId')) {",
+                  "    pm.collectionVariables.set('songId', pm.variables.replaceIn('{{$guid}}'));",
+                  "}",
+                  "if (!pm.collectionVariables.get('sessionId')) {",
+                  "    pm.collectionVariables.set('sessionId', pm.variables.replaceIn('{{$guid}}'));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Health Ready (DB Up)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{pbUrl}}/health/ready",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Auth - Negative",
+      "item": [
+        {
+          "name": "3. No Auth Header (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', function () { pm.response.to.have.status(401); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is MISSING_AUTHORIZATION_HEADER', function () { pm.expect(body.error).to.eql('MISSING_AUTHORIZATION_HEADER'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Malformed Auth Scheme (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Token abc"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', function () { pm.response.to.have.status(401); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_AUTHORIZATION_HEADER', function () { pm.expect(body.error).to.eql('INVALID_AUTHORIZATION_HEADER'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Empty Bearer Token (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer "
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', function () { pm.response.to.have.status(401); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_AUTHORIZATION_HEADER', function () { pm.expect(body.error).to.eql('INVALID_AUTHORIZATION_HEADER'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Garbage Token (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer not-a-jwt"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', function () { pm.response.to.have.status(401); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_ACCESS_TOKEN', function () { pm.expect(body.error).to.eql('INVALID_ACCESS_TOKEN'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Wrong-Secret Token (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Fully self-contained: Postman runs each request's pre-request script as",
+                  "// its own isolated execution, so the collection-level script's helper",
+                  "// functions/require('crypto-js') are NOT visible here \u2014 everything this",
+                  "// override needs is inlined, not shared, to avoid exactly that trap.",
+                  "const CryptoJS = require('crypto-js');",
+                  "function base64url(wordArrayOrBase64) {",
+                  "    const base64 = (typeof wordArrayOrBase64 === 'string') ? wordArrayOrBase64 : CryptoJS.enc.Base64.stringify(wordArrayOrBase64);",
+                  "    return base64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+                  "}",
+                  "function base64urlJSON(obj) {",
+                  "    return base64url(CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(JSON.stringify(obj))));",
+                  "}",
+                  "function mint(secret, userId, expiresInSeconds) {",
+                  "    const header = { alg: 'HS256', typ: 'JWT' };",
+                  "    const now = Math.floor(Date.now() / 1000);",
+                  "    const payload = { user_id: userId, tier: 'free', exp: now + expiresInSeconds, iat: now };",
+                  "    const signingInput = base64urlJSON(header) + '.' + base64urlJSON(payload);",
+                  "    return signingInput + '.' + base64url(CryptoJS.HmacSHA256(signingInput, secret));",
+                  "}",
+                  "pm.collectionVariables.set('accessToken', mint('a-completely-different-secret', pm.collectionVariables.get('userIdA'), 3600));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', function () { pm.response.to.have.status(401); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_ACCESS_TOKEN', function () { pm.expect(body.error).to.eql('INVALID_ACCESS_TOKEN'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Expired Token (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Fully self-contained: Postman runs each request's pre-request script as",
+                  "// its own isolated execution, so the collection-level script's helper",
+                  "// functions/require('crypto-js') are NOT visible here \u2014 everything this",
+                  "// override needs is inlined, not shared, to avoid exactly that trap.",
+                  "const CryptoJS = require('crypto-js');",
+                  "function base64url(wordArrayOrBase64) {",
+                  "    const base64 = (typeof wordArrayOrBase64 === 'string') ? wordArrayOrBase64 : CryptoJS.enc.Base64.stringify(wordArrayOrBase64);",
+                  "    return base64.replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+                  "}",
+                  "function base64urlJSON(obj) {",
+                  "    return base64url(CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(JSON.stringify(obj))));",
+                  "}",
+                  "function mint(secret, userId, expiresInSeconds) {",
+                  "    const header = { alg: 'HS256', typ: 'JWT' };",
+                  "    const now = Math.floor(Date.now() / 1000);",
+                  "    const payload = { user_id: userId, tier: 'free', exp: now + expiresInSeconds, iat: now };",
+                  "    const signingInput = base64urlJSON(header) + '.' + base64urlJSON(payload);",
+                  "    return signingInput + '.' + base64url(CryptoJS.HmacSHA256(signingInput, secret));",
+                  "}",
+                  "pm.collectionVariables.set('accessToken', mint(pm.collectionVariables.get('jwtSecret'), pm.collectionVariables.get('userIdA'), -3600));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', function () { pm.response.to.have.status(401); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_ACCESS_TOKEN', function () { pm.expect(body.error).to.eql('INVALID_ACCESS_TOKEN'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Single Ingest - Positive",
+      "item": [
+        {
+          "name": "9. Valid Single Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{sharedClientEventId}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('sharedClientEventId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('status field is accepted', function () { pm.expect(body.data.status).to.eql('accepted'); });",
+                  "if (body.data && body.data.event_id) pm.collectionVariables.set('firstEventId', body.data.event_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Retry Same client_event_id (Idempotent Duplicate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{sharedClientEventId}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('status field is duplicate', function () { pm.expect(body.data.status).to.eql('duplicate'); });",
+                  "pm.test('event_id unchanged from first submission', function () { pm.expect(body.data.event_id).to.eql(pm.collectionVariables.get('firstEventId')); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11. Valid Event With duration_ms + context",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"complete\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\",\n  \"duration_ms\": 180000,\n  \"context\": {\"app_version\": \"1.2.3\"}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Event Type = play",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Event Type = pause",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"pause\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Event Type = seek",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"seek\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Event Type = skip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"skip\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Event Type = replay",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"replay\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12. Event Type = complete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"complete\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13. occurred_at 23h59m Future (Within Cap)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{futureOk}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('futureOk', new Date(Date.now() + (23*60+59)*60000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14a. context At True Boundary (4095 Wire Bytes -> 4096 Stored) -> Accepted",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\",\n  \"context\": {{ctx4095}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Computes a single-key JSON object whose OWN text is exactly `target`",
+                  "// bytes on the wire, measured at runtime rather than assumed.",
+                  "function padTo(target) {",
+                  "    let padLen = target;",
+                  "    for (;;) {",
+                  "        const candidate = JSON.stringify({ pad: 'x'.repeat(padLen) });",
+                  "        const n = candidate.length;",
+                  "        if (n === target) return candidate;",
+                  "        padLen -= (n - target);",
+                  "    }",
+                  "}",
+                  "// A compact (no-whitespace) single-key object has exactly one ':' \u2014",
+                  "// Postgres's jsonb type adds a space after it on storage, so a wire",
+                  "// payload of N bytes here is stored as N+1 bytes. 4095 wire bytes is",
+                  "// therefore the TRUE boundary that lands at exactly the DB's 4096-byte",
+                  "// stored cap, not 4096 wire bytes as a naive reading of the spec (\"4 KiB\")",
+                  "// would suggest. See Docs/common/DECISIONS_AND_GOTCHAS.md for the full story",
+                  "// \u2014 this collection is what caught the bug in the first place.",
+                  "pm.collectionVariables.set('ctx4095', padTo(4095));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14b. context One Byte Past True Boundary (4096 Wire Bytes, Single Key) -> Rejected",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\",\n  \"context\": {{ctx4096}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Computes a single-key JSON object whose OWN text is exactly `target`",
+                  "// bytes on the wire, measured at runtime rather than assumed.",
+                  "function padTo(target) {",
+                  "    let padLen = target;",
+                  "    for (;;) {",
+                  "        const candidate = JSON.stringify({ pad: 'x'.repeat(padLen) });",
+                  "        const n = candidate.length;",
+                  "        if (n === target) return candidate;",
+                  "        padLen -= (n - target);",
+                  "    }",
+                  "}",
+                  "// This is the exact payload shape that returned a raw 500 before this",
+                  "// ticket's fix (repository.go's mapContextCheckViolation): it passes",
+                  "// Go's pre-insert ValidateIngest check (exactly 4096 wire bytes) but",
+                  "// Postgres's jsonb canonicalization grows it to 4097 stored bytes,",
+                  "// tripping the CHECK constraint. Now correctly surfaced as a clean",
+                  "// 400 CONTEXT_TOO_LARGE instead of leaking a 500.",
+                  "pm.collectionVariables.set('ctx4096', padTo(4096));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is CONTEXT_TOO_LARGE', function () { pm.expect(body.error).to.eql('CONTEXT_TOO_LARGE'); });",
+                  "pm.test('field is context', function () { pm.expect(body.field).to.eql('context'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Single Ingest - Negative",
+      "item": [
+        {
+          "name": "15. Malformed JSON Body (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "not json",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_REQUEST_BODY', function () { pm.expect(body.error).to.eql('INVALID_REQUEST_BODY'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16. Zero client_event_id (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is CLIENT_EVENT_ID_REQUIRED', function () { pm.expect(body.error).to.eql('CLIENT_EVENT_ID_REQUIRED'); });",
+                  "pm.test('field is client_event_id', function () { pm.expect(body.field).to.eql('client_event_id'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17. Zero song_id (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is SONG_ID_REQUIRED', function () { pm.expect(body.error).to.eql('SONG_ID_REQUIRED'); });",
+                  "pm.test('field is song_id', function () { pm.expect(body.field).to.eql('song_id'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18. Zero session_id (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"00000000-0000-0000-0000-000000000000\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is SESSION_ID_REQUIRED', function () { pm.expect(body.error).to.eql('SESSION_ID_REQUIRED'); });",
+                  "pm.test('field is session_id', function () { pm.expect(body.field).to.eql('session_id'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19. Invalid event_type (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"bogus\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_EVENT_TYPE', function () { pm.expect(body.error).to.eql('INVALID_EVENT_TYPE'); });",
+                  "pm.test('field is event_type', function () { pm.expect(body.field).to.eql('event_type'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20. Missing occurred_at (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is OCCURRED_AT_REQUIRED', function () { pm.expect(body.error).to.eql('OCCURRED_AT_REQUIRED'); });",
+                  "pm.test('field is occurred_at', function () { pm.expect(body.field).to.eql('occurred_at'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21. occurred_at 24h1m Future (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{futureBad}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('futureBad', new Date(Date.now() + (24*60+1)*60000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is OCCURRED_AT_TOO_FAR_IN_FUTURE', function () { pm.expect(body.error).to.eql('OCCURRED_AT_TOO_FAR_IN_FUTURE'); });",
+                  "pm.test('field is occurred_at', function () { pm.expect(body.field).to.eql('occurred_at'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22. Negative position_ms (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": -1,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is POSITION_MS_NEGATIVE', function () { pm.expect(body.error).to.eql('POSITION_MS_NEGATIVE'); });",
+                  "pm.test('field is position_ms', function () { pm.expect(body.field).to.eql('position_ms'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23. Negative duration_ms (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\",\n  \"duration_ms\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is DURATION_MS_NEGATIVE', function () { pm.expect(body.error).to.eql('DURATION_MS_NEGATIVE'); });",
+                  "pm.test('field is duration_ms', function () { pm.expect(body.field).to.eql('duration_ms'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "24. Blank device_type (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"   \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is DEVICE_TYPE_REQUIRED', function () { pm.expect(body.error).to.eql('DEVICE_TYPE_REQUIRED'); });",
+                  "pm.test('field is device_type', function () { pm.expect(body.field).to.eql('device_type'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "25. context Over 4096 Bytes (Should Fail, Rejected Before The DB)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\",\n  \"context\": {{ctx4097}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Self-contained (each request's pre-request script is its own",
+                  "// isolated execution \u2014 see 14a/14b's padTo helper, not shared here).",
+                  "// At 4097 wire bytes this is unambiguously over the cap regardless of",
+                  "// storage canonicalization, so ValidateIngest rejects it BEFORE any",
+                  "// DB round trip \u2014 unlike 14b, which needs the DB-level fix to catch.",
+                  "function padTo(target) {",
+                  "    let padLen = target;",
+                  "    for (;;) {",
+                  "        const candidate = JSON.stringify({ pad: 'x'.repeat(padLen) });",
+                  "        const n = candidate.length;",
+                  "        if (n === target) return candidate;",
+                  "        padLen -= (n - target);",
+                  "    }",
+                  "}",
+                  "pm.collectionVariables.set('ctx4097', padTo(4097));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is CONTEXT_TOO_LARGE', function () { pm.expect(body.error).to.eql('CONTEXT_TOO_LARGE'); });",
+                  "pm.test('field is context', function () { pm.expect(body.field).to.eql('context'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "26. Malformed UUID String (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"not-a-uuid\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_REQUEST_BODY', function () { pm.expect(body.error).to.eql('INVALID_REQUEST_BODY'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Identity & Per-User Scoping",
+      "item": [
+        {
+          "name": "27. Body user_id Spoof Ignored",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{$guid}}\",\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "// IngestRequest has no user_id field at all \u2014 there is structurally",
+                  "// nothing here for a malicious body to override; this 202 alone proves",
+                  "// the extra key was silently ignored, not rejected or honored."
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "28. User A Submits Shared client_event_id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{crossUserClientEventId}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('crossUserClientEventId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.collectionVariables.set('userAEventId', body.data.event_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "29. User B Submits SAME client_event_id (Also Accepted)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenB}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{crossUserClientEventId}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('status is accepted, not duplicate \u2014 uniqueness is per-user', function () {",
+                  "    pm.expect(body.data.status).to.eql('accepted');",
+                  "});",
+                  "pm.test('event_id differs from user A\\'s row for the same client_event_id', function () {",
+                  "    pm.expect(body.data.event_id).to.not.eql(pm.collectionVariables.get('userAEventId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Batch - Positive",
+      "item": [
+        {
+          "name": "30. Valid Batch of 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events:batch",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events:batch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"events\": [\n    {\"client_event_id\": \"{{batchEventId1}}\", \"song_id\": \"{{songId}}\", \"session_id\": \"{{sessionId}}\", \"event_type\": \"play\", \"occurred_at\": \"{{$isoTimestamp}}\", \"position_ms\": 0, \"device_type\": \"mobile\"},\n    {\"client_event_id\": \"{{batchEventId2}}\", \"song_id\": \"{{songId}}\", \"session_id\": \"{{sessionId}}\", \"event_type\": \"pause\", \"occurred_at\": \"{{$isoTimestamp}}\", \"position_ms\": 5000, \"device_type\": \"mobile\"}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('batchEventId1', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('batchEventId2', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('two results, in request order, both accepted', function () {",
+                  "    pm.expect(body.data.results).to.have.lengthOf(2);",
+                  "    pm.expect(body.data.results[0].client_event_id).to.eql(pm.collectionVariables.get('batchEventId1'));",
+                  "    pm.expect(body.data.results[1].client_event_id).to.eql(pm.collectionVariables.get('batchEventId2'));",
+                  "    pm.expect(body.data.results[0].status).to.eql('accepted');",
+                  "    pm.expect(body.data.results[1].status).to.eql('accepted');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "31. Resubmit Same Batch (Both Duplicate, Same Order)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events:batch",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events:batch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"events\": [\n    {\"client_event_id\": \"{{batchEventId1}}\", \"song_id\": \"{{songId}}\", \"session_id\": \"{{sessionId}}\", \"event_type\": \"play\", \"occurred_at\": \"{{$isoTimestamp}}\", \"position_ms\": 0, \"device_type\": \"mobile\"},\n    {\"client_event_id\": \"{{batchEventId2}}\", \"song_id\": \"{{songId}}\", \"session_id\": \"{{sessionId}}\", \"event_type\": \"pause\", \"occurred_at\": \"{{$isoTimestamp}}\", \"position_ms\": 5000, \"device_type\": \"mobile\"}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('both now duplicate', function () {",
+                  "    pm.expect(body.data.results[0].status).to.eql('duplicate');",
+                  "    pm.expect(body.data.results[1].status).to.eql('duplicate');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "32. Batch of Exactly 100 (Cap)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events:batch",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events:batch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{batch100}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const events = [];",
+                  "for (let i = 0; i < 100; i++) {",
+                  "    events.push({",
+                  "        client_event_id: pm.variables.replaceIn('{{$guid}}'),",
+                  "        song_id: pm.collectionVariables.get('songId'),",
+                  "        session_id: pm.collectionVariables.get('sessionId'),",
+                  "        event_type: 'play',",
+                  "        occurred_at: new Date().toISOString(),",
+                  "        position_ms: i,",
+                  "        device_type: 'mobile',",
+                  "    });",
+                  "}",
+                  "pm.collectionVariables.set('batch100', JSON.stringify({ events: events }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('100 results, all accepted', function () {",
+                  "    pm.expect(body.data.results).to.have.lengthOf(100);",
+                  "    pm.expect(body.data.results.every(r => r.status === 'accepted')).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Batch - Negative",
+      "item": [
+        {
+          "name": "33. Empty events Array (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events:batch",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events:batch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"events\": []}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is BATCH_EMPTY', function () { pm.expect(body.error).to.eql('BATCH_EMPTY'); });",
+                  "pm.test('field is events', function () { pm.expect(body.field).to.eql('events'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "34. Batch of 101 (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events:batch",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events:batch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{batch101}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const events = [];",
+                  "for (let i = 0; i < 101; i++) {",
+                  "    events.push({",
+                  "        client_event_id: pm.variables.replaceIn('{{$guid}}'),",
+                  "        song_id: pm.collectionVariables.get('songId'),",
+                  "        session_id: pm.collectionVariables.get('sessionId'),",
+                  "        event_type: 'play',",
+                  "        occurred_at: new Date().toISOString(),",
+                  "        position_ms: i,",
+                  "        device_type: 'mobile',",
+                  "    });",
+                  "}",
+                  "pm.collectionVariables.set('batch101', JSON.stringify({ events: events }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is BATCH_TOO_LARGE', function () { pm.expect(body.error).to.eql('BATCH_TOO_LARGE'); });",
+                  "pm.test('field is events', function () { pm.expect(body.field).to.eql('events'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "35. One Malformed Event Rejects Whole Batch (All-Or-Nothing)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events:batch",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events:batch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"events\": [\n    {\"client_event_id\": \"{{allOrNothingGoodId}}\", \"song_id\": \"{{songId}}\", \"session_id\": \"{{sessionId}}\", \"event_type\": \"play\", \"occurred_at\": \"{{$isoTimestamp}}\", \"position_ms\": 0, \"device_type\": \"mobile\"},\n    {\"client_event_id\": \"{{$guid}}\", \"song_id\": \"{{songId}}\", \"session_id\": \"{{sessionId}}\", \"event_type\": \"play\", \"occurred_at\": \"{{$isoTimestamp}}\", \"position_ms\": -1, \"device_type\": \"mobile\"}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('allOrNothingGoodId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is POSITION_MS_NEGATIVE', function () { pm.expect(body.error).to.eql('POSITION_MS_NEGATIVE'); });",
+                  "pm.test('field is events[1].position_ms', function () { pm.expect(body.field).to.eql('events[1].position_ms'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "36. Retry Batch's Good Event Alone (Proves Nothing Was Written)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{allOrNothingGoodId}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('accepted, NOT duplicate \u2014 the rejected batch wrote nothing', function () {",
+                  "    pm.expect(body.data.status).to.eql('accepted');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Manual-Only (Requires Stopping Postgres By Hand)",
+      "description": "Not automatable in Postman alone \u2014 run `docker compose stop playback-postgres`, then fire this request, then `docker compose start playback-postgres` before continuing the collection.",
+      "item": [
+        {
+          "name": "37. Health Ready With DB Down (Run Manually)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{pbUrl}}/health/ready",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 503 while Postgres is stopped', function () {",
+                  "    pm.response.to.have.status(503);",
+                  "});",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('failed check names postgres', function () {",
+                  "    pm.expect(body.data.failed).to.include('postgres');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
