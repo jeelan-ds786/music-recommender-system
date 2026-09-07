@@ -111,7 +111,7 @@ Each developer should be able to answer these without reading the implementation
 
 ## Completion Evidence
 
-- [ ] Spillover gate result records PR #29/#30 disposition and remaining Epic 2 backlog.
+- [x] Spillover gate result records PR #29/#30 disposition and remaining Epic 2 backlog in `Sprint3_Tracker.md`.
 - [ ] Links to every merged Sprint 3 PR are recorded in `Sprint3_Tracker.md`.
 - [ ] Playback and streaming unit/integration/race test commands and outputs are recorded.
 - [ ] Migration up/down evidence is recorded for a clean `muse_playback` database.
