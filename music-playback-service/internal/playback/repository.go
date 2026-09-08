@@ -9,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	playbackevent "github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/event"
 )
 
 // checkViolation is the Postgres SQLSTATE for a CHECK constraint failure.
@@ -39,7 +41,7 @@ type Repository interface {
 	// Insert stores event, or — if (user_id, client_event_id) already
 	// exists — leaves event.ID pointing at the existing row instead.
 	// Returns true only when this call actually created a new row.
-	Insert(ctx context.Context, event *Event) (inserted bool, err error)
+	Insert(ctx context.Context, event *Event, message playbackevent.Message) (inserted bool, err error)
 }
 
 type PostgresRepository struct {
@@ -50,11 +52,17 @@ func NewRepository(db *pgxpool.Pool) Repository {
 	return &PostgresRepository{db: db}
 }
 
-func (r *PostgresRepository) Insert(ctx context.Context, event *Event) (bool, error) {
+func (r *PostgresRepository) Insert(ctx context.Context, event *Event, message playbackevent.Message) (bool, error) {
 	contextPayload := event.Context
 	if len(contextPayload) == 0 {
 		contextPayload = json.RawMessage("{}")
 	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// ON CONFLICT DO NOTHING (not DO UPDATE) is required here: an UPDATE
 	// — even a no-op one used purely to RETURNING the existing row, the
@@ -72,7 +80,7 @@ func (r *PostgresRepository) Insert(ctx context.Context, event *Event) (bool, er
 	`
 
 	var insertedID uuid.UUID
-	err := r.db.QueryRow(ctx, query,
+	err = tx.QueryRow(ctx, query,
 		event.ID,
 		event.ClientEventID,
 		event.UserID,
@@ -87,6 +95,23 @@ func (r *PostgresRepository) Insert(ctx context.Context, event *Event) (bool, er
 	).Scan(&insertedID)
 
 	if err == nil {
+		headers, marshalErr := json.Marshal(message.Headers)
+		if marshalErr != nil {
+			return false, marshalErr
+		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO outbox_events
+				(id, playback_event_id, topic, message_key, event_type,
+				 schema_version, headers, payload, occurred_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, message.ID, event.ID, message.Topic, message.Key, message.EventType,
+			message.SchemaVersion, headers, message.Payload, message.OccurredAt)
+		if err != nil {
+			return false, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -94,7 +119,10 @@ func (r *PostgresRepository) Insert(ctx context.Context, event *Event) (bool, er
 	}
 
 	existingQuery := `SELECT id FROM playback_events WHERE user_id = $1 AND client_event_id = $2`
-	if err := r.db.QueryRow(ctx, existingQuery, event.UserID, event.ClientEventID).Scan(&event.ID); err != nil {
+	if err := tx.QueryRow(ctx, existingQuery, event.UserID, event.ClientEventID).Scan(&event.ID); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return false, err
 	}
 
