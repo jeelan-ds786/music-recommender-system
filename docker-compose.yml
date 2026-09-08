@@ -90,7 +90,8 @@ services:
     command: >
       "/opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.registered --partitions 1 --replication-factor 1 &&
        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.preference.updated --partitions 1 --replication-factor 1 &&
-       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.playlist.updated --partitions 1 --replication-factor 1"
+        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.playlist.updated --partitions 1 --replication-factor 1 &&
+        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic playback.event.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000"
 
   identity-svc:
     build: ./music-identity-gatekeeper
@@ -147,6 +148,9 @@ services:
       PORT: "8082"
       DB_URL: "postgres://muse:secret@playback-postgres:5432/muse_playback?sslmode=disable"
       JWT_SECRET: "${JWT_SECRET}"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_RELAY_ENABLED: "true"
+      KAFKA_RELAY_INTERVAL: "1s"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/health/ready"]
       interval: 5s

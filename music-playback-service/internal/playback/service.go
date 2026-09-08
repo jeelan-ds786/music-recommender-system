@@ -7,7 +7,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	playbackevent "github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/event"
+	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/event/eventpb"
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/logger"
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/reqid"
 )
@@ -18,13 +22,30 @@ type Service interface {
 }
 
 type service struct {
-	repo Repository
-	log  *logger.Logger
-	now  func() time.Time
+	repo   Repository
+	log    *logger.Logger
+	direct interface {
+		Publish(context.Context, playbackevent.Message)
+	}
+	now func() time.Time
 }
 
-func NewService(repo Repository, log *logger.Logger) Service {
-	return &service{repo: repo, log: log, now: time.Now}
+type ServiceOption func(*service)
+
+func WithDirectPublisher(direct interface {
+	Publish(context.Context, playbackevent.Message)
+}) ServiceOption {
+	return func(service *service) {
+		service.direct = direct
+	}
+}
+
+func NewService(repo Repository, log *logger.Logger, options ...ServiceOption) Service {
+	service := &service{repo: repo, log: log, now: time.Now}
+	for _, option := range options {
+		option(service)
+	}
+	return service
 }
 
 func (s *service) IngestSingle(
@@ -116,7 +137,42 @@ func (s *service) store(ctx context.Context, userID uuid.UUID, req IngestRequest
 		Context:       req.Context,
 	}
 
-	inserted, err := s.repo.Insert(ctx, event)
+	requestID, _ := reqid.FromContext(ctx)
+	producedAt := s.now()
+	payload, err := proto.Marshal(&eventpb.PlaybackEventV1{
+		EventId:       event.ID.String(),
+		EventType:     string(event.Type),
+		SchemaVersion: playbackevent.SchemaVersion,
+		OccurredAt:    timestamppb.New(event.OccurredAt),
+		ProducedAt:    timestamppb.New(producedAt),
+		Producer:      playbackevent.Producer,
+		TraceId:       requestID,
+		UserId:        event.UserID.String(),
+		ClientEventId: event.ClientEventID.String(),
+		SongId:        event.SongID.String(),
+		SessionId:     event.SessionID.String(),
+		PositionMs:    event.PositionMS,
+		DurationMs:    event.DurationMS,
+		DeviceType:    event.DeviceType,
+		Context:       event.Context,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	message := playbackevent.Message{
+		ID:              uuid.New(),
+		PlaybackEventID: event.ID,
+		Topic:           playbackevent.PlaybackTopic,
+		Key:             userID.String(),
+		EventType:       string(event.Type),
+		SchemaVersion:   playbackevent.SchemaVersion,
+		Headers:         playbackevent.PlaybackHeaders(string(event.Type)),
+		Payload:         payload,
+		OccurredAt:      event.OccurredAt,
+	}
+
+	inserted, err := s.repo.Insert(ctx, event, message)
 	if err != nil {
 		if errors.Is(err, ErrContextTooLarge) {
 			return nil, &ValidationError{Error: "CONTEXT_TOO_LARGE", Field: "context"}, nil
@@ -127,6 +183,9 @@ func (s *service) store(ctx context.Context, userID uuid.UUID, req IngestRequest
 	status := IngestStatusDuplicate
 	if inserted {
 		status = IngestStatusAccepted
+		if s.direct != nil {
+			s.direct.Publish(ctx, message)
+		}
 	}
 
 	return &IngestResponse{

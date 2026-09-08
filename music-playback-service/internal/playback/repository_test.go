@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	playbackevent "github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/event"
 )
 
 // testRepository connects to a real Postgres and self-skips without
@@ -44,11 +46,25 @@ func newTestEvent(userID uuid.UUID) *Event {
 	}
 }
 
+func newTestMessage(event *Event) playbackevent.Message {
+	return playbackevent.Message{
+		ID:              uuid.New(),
+		PlaybackEventID: event.ID,
+		Topic:           playbackevent.PlaybackTopic,
+		Key:             event.UserID.String(),
+		EventType:       string(event.Type),
+		SchemaVersion:   playbackevent.SchemaVersion,
+		Headers:         playbackevent.PlaybackHeaders(string(event.Type)),
+		Payload:         []byte("protobuf"),
+		OccurredAt:      event.OccurredAt,
+	}
+}
+
 func TestPostgresRepositoryInsertAndDuplicate(t *testing.T) {
 	repo := testRepository(t)
 	event := newTestEvent(uuid.New())
 
-	inserted, err := repo.Insert(context.Background(), event)
+	inserted, err := repo.Insert(context.Background(), event, newTestMessage(event))
 	if err != nil {
 		t.Fatalf("Insert() error = %v", err)
 	}
@@ -63,7 +79,7 @@ func TestPostgresRepositoryInsertAndDuplicate(t *testing.T) {
 	retry.ID = uuid.New() // a genuine client retry would generate a fresh server-side attempt too
 	retry.PositionMS = 999
 
-	inserted2, err2 := repo.Insert(context.Background(), &retry)
+	inserted2, err2 := repo.Insert(context.Background(), &retry, newTestMessage(&retry))
 	if err2 != nil {
 		t.Fatalf("Insert() retry error = %v", err2)
 	}
@@ -84,6 +100,40 @@ func TestPostgresRepositoryInsertAndDuplicate(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("row count = %d, want exactly 1 ledger row after retry", count)
+	}
+	if err := repo.db.QueryRow(context.Background(),
+		`SELECT count(*) FROM outbox_events WHERE playback_event_id = $1`, firstID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count outbox rows: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("outbox row count = %d, want exactly 1 after retry", count)
+	}
+}
+
+func TestPostgresRepositoryOutboxFailureRollsBackLedger(t *testing.T) {
+	repo := testRepository(t)
+	first := newTestEvent(uuid.New())
+	message := newTestMessage(first)
+	if inserted, err := repo.Insert(context.Background(), first, message); err != nil || !inserted {
+		t.Fatalf("seed Insert() = %t, %v", inserted, err)
+	}
+
+	second := newTestEvent(uuid.New())
+	collidingMessage := newTestMessage(second)
+	collidingMessage.ID = message.ID
+	if inserted, err := repo.Insert(context.Background(), second, collidingMessage); err == nil || inserted {
+		t.Fatalf("colliding Insert() = %t, %v, want outbox error", inserted, err)
+	}
+
+	var count int
+	if err := repo.db.QueryRow(context.Background(),
+		`SELECT count(*) FROM playback_events WHERE id = $1`, second.ID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count rolled-back ledger row: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("rolled-back ledger row count = %d, want 0", count)
 	}
 }
 
@@ -108,7 +158,7 @@ func TestPostgresRepositoryConcurrentInsertIsIdempotent(t *testing.T) {
 				OccurredAt:    time.Now(),
 				DeviceType:    "mobile",
 			}
-			inserted, err := repo.Insert(context.Background(), event)
+			inserted, err := repo.Insert(context.Background(), event, newTestMessage(event))
 			if err != nil {
 				t.Errorf("Insert() error = %v", err)
 				return

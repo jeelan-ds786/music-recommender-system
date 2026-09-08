@@ -1,7 +1,7 @@
-include .env
+-include .env
 export
 
-.PHONY: fmt lint lint-fix test check migrate-up migrate-down migrate-down-clean dev
+.PHONY: fmt lint lint-fix test check migrate-up migrate-down migrate-down-clean proto-gen dev
 
 fmt:
 	gofmt -w .
@@ -33,6 +33,9 @@ migrate-down:
 
 migrate-down-clean:
 	migrate -path migrations -database "$(DB_URL)" down -all
+
+proto-gen:
+	protoc -I proto --go_out=. --go_opt=module=github.com/jeelan-ds786/music-recommender-system/music-playback-service proto/playback/v1/events.proto
 
 dev:
 	go run ./cmd/server
