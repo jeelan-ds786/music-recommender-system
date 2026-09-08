@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -17,6 +18,14 @@ type fakeRepository struct {
 	// follow-up SELECT.
 	byKey map[[2]uuid.UUID]uuid.UUID
 	err   error
+
+	// GetSessionEvents fakes — configured directly by tests that need
+	// them; zero value (nil, nil, nil, nil) is fine for every test that
+	// never calls GetSessionEvents.
+	sessionEvents   []Event
+	sessionOverview *SessionOverview
+	sessionNext     *Cursor
+	sessionErr      error
 }
 
 func newFakeRepository() *fakeRepository {
@@ -36,6 +45,13 @@ func (r *fakeRepository) Insert(_ context.Context, event *Event) (bool, error) {
 
 	r.byKey[key] = event.ID
 	return true, nil
+}
+
+func (r *fakeRepository) GetSessionEvents(_ context.Context, _, _ uuid.UUID, _ *Cursor, _ int) ([]Event, *SessionOverview, *Cursor, error) {
+	if r.sessionErr != nil {
+		return nil, nil, nil, r.sessionErr
+	}
+	return r.sessionEvents, r.sessionOverview, r.sessionNext, nil
 }
 
 func TestIngestSingle(t *testing.T) {
@@ -211,5 +227,186 @@ func TestIngestBatchAllOrNothingOnMalformed(t *testing.T) {
 	// Nothing should have been written — not even the first, valid event.
 	if len(repo.byKey) != 0 {
 		t.Fatalf("repo.byKey = %+v, want empty (all-or-nothing on malformed batch)", repo.byKey)
+	}
+}
+
+func TestGetSessionEventsInvalidCursorRejectedBeforeRepo(t *testing.T) {
+	repo := newFakeRepository()
+	repo.sessionErr = errors.New("should not be called")
+	svc := NewService(repo, logger.New(logger.LevelNone))
+
+	_, err := svc.GetSessionEvents(context.Background(), uuid.New(), uuid.New(), "not-a-valid-cursor", 10)
+	if !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("GetSessionEvents() error = %v, want ErrInvalidCursor (decoded before the repo is ever called)", err)
+	}
+}
+
+func TestGetSessionEventsClampsLimit(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     int
+		wantLimit int
+	}{
+		{name: "zero uses default", input: 0, wantLimit: defaultSessionEventsLimit},
+		{name: "negative uses default", input: -5, wantLimit: defaultSessionEventsLimit},
+		{name: "over max clamps to max", input: maxSessionEventsLimit + 50, wantLimit: maxSessionEventsLimit},
+		{name: "within range passes through", input: 7, wantLimit: 7},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var gotLimit int
+			repo := &limitCapturingRepository{
+				fakeRepository: newFakeRepository(),
+				onCall: func(limit int) {
+					gotLimit = limit
+				},
+			}
+			repo.sessionOverview = &SessionOverview{EventCount: 1, OutOfOrder: map[uuid.UUID]bool{}}
+			svc := NewService(repo, logger.New(logger.LevelNone))
+
+			if _, err := svc.GetSessionEvents(context.Background(), uuid.New(), uuid.New(), "", test.input); err != nil {
+				t.Fatalf("GetSessionEvents() error = %v", err)
+			}
+			if gotLimit != test.wantLimit {
+				t.Fatalf("limit passed to repo = %d, want %d", gotLimit, test.wantLimit)
+			}
+		})
+	}
+}
+
+func TestGetSessionEventsPropagatesNotFound(t *testing.T) {
+	repo := newFakeRepository()
+	repo.sessionErr = ErrSessionNotFound
+	svc := NewService(repo, logger.New(logger.LevelNone))
+
+	_, err := svc.GetSessionEvents(context.Background(), uuid.New(), uuid.New(), "", 10)
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("GetSessionEvents() error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+func TestGetSessionEventsBuildsNextCursorAndSummary(t *testing.T) {
+	userID := uuid.New()
+	sessionID := uuid.New()
+	event := Event{
+		ID: uuid.New(), ClientEventID: uuid.New(), SongID: uuid.New(),
+		Type: EventTypePlay, OccurredAt: time.Now(), PositionMS: 0, DeviceType: "mobile",
+		IngestedAt: time.Now(),
+	}
+	next := &Cursor{OccurredAt: event.OccurredAt, ID: event.ID}
+
+	repo := newFakeRepository()
+	repo.sessionEvents = []Event{event}
+	repo.sessionOverview = &SessionOverview{
+		EventCount: 5, StartedAt: event.OccurredAt, EndedAt: event.OccurredAt.Add(time.Minute),
+		DurationMS: 60_000, OutOfOrder: map[uuid.UUID]bool{event.ID: true},
+	}
+	repo.sessionNext = next
+	svc := NewService(repo, logger.New(logger.LevelNone))
+
+	page, err := svc.GetSessionEvents(context.Background(), userID, sessionID, "", 1)
+	if err != nil {
+		t.Fatalf("GetSessionEvents() error = %v", err)
+	}
+	if page.Session.SessionID != sessionID || page.Session.EventCount != 5 || page.Session.DurationMS != 60_000 {
+		t.Fatalf("Session = %+v, want session-wide summary from the overview", page.Session)
+	}
+	if len(page.Events) != 1 || page.Events[0].EventID != event.ID {
+		t.Fatalf("Events = %+v, want the one event from the repo", page.Events)
+	}
+	if !page.Events[0].Quality.OutOfOrder {
+		t.Fatalf("Quality.OutOfOrder = false, want true (event.ID is in overview.OutOfOrder)")
+	}
+	if page.NextCursor == nil {
+		t.Fatal("NextCursor = nil, want non-nil")
+	}
+	decoded, err := DecodeCursor(*page.NextCursor)
+	if err != nil {
+		t.Fatalf("DecodeCursor(NextCursor) error = %v", err)
+	}
+	if decoded.ID != next.ID {
+		t.Fatalf("decoded cursor ID = %v, want %v", decoded.ID, next.ID)
+	}
+}
+
+// limitCapturingRepository wraps fakeRepository to capture the limit
+// GetSessionEvents actually receives, for asserting the service's
+// clamping behavior independent of the repository's own logic.
+type limitCapturingRepository struct {
+	*fakeRepository
+	onCall func(limit int)
+}
+
+func (r *limitCapturingRepository) GetSessionEvents(ctx context.Context, userID, sessionID uuid.UUID, cursor *Cursor, limit int) ([]Event, *SessionOverview, *Cursor, error) {
+	r.onCall(limit)
+	return r.fakeRepository.GetSessionEvents(ctx, userID, sessionID, cursor, limit)
+}
+
+func TestComputeQuality(t *testing.T) {
+	now := time.Now()
+	durationMS := func(ms int64) *int64 { return &ms }
+
+	tests := []struct {
+		name         string
+		event        Event
+		outOfOrder   bool
+		wantLate     bool
+		wantPctIsNil bool
+		wantPct      float64
+	}{
+		{
+			name:         "on time, no duration -> completion unknown",
+			event:        Event{OccurredAt: now, IngestedAt: now.Add(time.Second), PositionMS: 1000, DurationMS: nil},
+			wantLate:     false,
+			wantPctIsNil: true,
+		},
+		{
+			name:         "zero duration -> completion unknown, not a division-by-zero panic",
+			event:        Event{OccurredAt: now, IngestedAt: now.Add(time.Second), PositionMS: 0, DurationMS: durationMS(0)},
+			wantLate:     false,
+			wantPctIsNil: true,
+		},
+		{
+			name:    "50 percent complete",
+			event:   Event{OccurredAt: now, IngestedAt: now.Add(time.Second), PositionMS: 50_000, DurationMS: durationMS(100_000)},
+			wantPct: 0.5,
+		},
+		{
+			name:    "position beyond duration clamps to 1.0, not an error",
+			event:   Event{OccurredAt: now, IngestedAt: now.Add(time.Second), PositionMS: 150_000, DurationMS: durationMS(100_000)},
+			wantPct: 1.0,
+		},
+		{
+			name:     "ingested well within threshold is not late",
+			event:    Event{OccurredAt: now, IngestedAt: now.Add(lateThreshold - time.Second)},
+			wantLate: false, wantPctIsNil: true,
+		},
+		{
+			name:     "ingested just past threshold is late",
+			event:    Event{OccurredAt: now, IngestedAt: now.Add(lateThreshold + time.Second)},
+			wantLate: true, wantPctIsNil: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := computeQuality(test.event, test.outOfOrder)
+			if got.Late != test.wantLate {
+				t.Fatalf("Late = %t, want %t", got.Late, test.wantLate)
+			}
+			if test.wantPctIsNil {
+				if got.CompletionPercentage != nil {
+					t.Fatalf("CompletionPercentage = %v, want nil", *got.CompletionPercentage)
+				}
+				return
+			}
+			if got.CompletionPercentage == nil {
+				t.Fatal("CompletionPercentage = nil, want non-nil")
+			}
+			if *got.CompletionPercentage != test.wantPct {
+				t.Fatalf("CompletionPercentage = %v, want %v", *got.CompletionPercentage, test.wantPct)
+			}
+		})
 	}
 }

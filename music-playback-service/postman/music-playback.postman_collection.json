@@ -167,6 +167,26 @@
     {
       "key": "futureBad",
       "value": ""
+    },
+    {
+      "key": "sessionEventsSessionId",
+      "value": ""
+    },
+    {
+      "key": "sessionEventsFirstEventId",
+      "value": ""
+    },
+    {
+      "key": "sessionEventsSecondEventId",
+      "value": ""
+    },
+    {
+      "key": "sessionEventsPastTimestamp",
+      "value": ""
+    },
+    {
+      "key": "sessionEventsNextCursor",
+      "value": ""
     }
   ],
   "item": [
@@ -2559,6 +2579,535 @@
                   "var body = {}; try { body = pm.response.json(); } catch (e) {}",
                   "pm.test('failed check names postgres', function () {",
                   "    pm.expect(body.data.failed).to.include('postgres');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Session Events (E3-SS-03)",
+      "item": [
+        {
+          "name": "38. Setup: Ingest First Session Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionEventsSessionId}}\",\n  \"event_type\": \"play\",\n  \"occurred_at\": \"{{$isoTimestamp}}\",\n  \"position_ms\": 0,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('sessionEventsSessionId')) {",
+                  "    pm.collectionVariables.set('sessionEventsSessionId', pm.variables.replaceIn('{{$guid}}'));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "if (body.data && body.data.event_id) pm.collectionVariables.set('sessionEventsFirstEventId', body.data.event_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "39. Setup: Ingest Second Session Event (Out-Of-Order, 50% Complete)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_event_id\": \"{{$guid}}\",\n  \"song_id\": \"{{songId}}\",\n  \"session_id\": \"{{sessionEventsSessionId}}\",\n  \"event_type\": \"complete\",\n  \"occurred_at\": \"{{sessionEventsPastTimestamp}}\",\n  \"position_ms\": 50000,\n  \"duration_ms\": 100000,\n  \"device_type\": \"mobile\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// occurred_at 10 minutes in the past, but ingested NOW (after the",
+                  "// first event above) \u2014 a genuine out-of-order arrival: this event",
+                  "// claims to have happened before the first one, but actually arrived",
+                  "// after it. Also exercises completion_percentage (50000/100000 = 0.5)",
+                  "// and late (occurred_at is ~10 minutes behind ingested_at, past the",
+                  "// service's 5-minute lateThreshold).",
+                  "pm.collectionVariables.set('sessionEventsPastTimestamp', new Date(Date.now() - 10 * 60000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "if (body.data && body.data.event_id) pm.collectionVariables.set('sessionEventsSecondEventId', body.data.event_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "40. Get Session Events - Success (Quality Flags Correct)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/sessions/{{sessionEventsSessionId}}/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "sessions",
+                "{{sessionEventsSessionId}}",
+                "events"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "var page = body.data || {};",
+                  "pm.test('session summary has both events', function () {",
+                  "    pm.expect(page.session.event_count).to.eql(2);",
+                  "});",
+                  "pm.test('events retained in occurred_at order, not dropped', function () {",
+                  "    pm.expect(page.events).to.have.lengthOf(2);",
+                  "    pm.expect(page.events[0].event_id).to.eql(pm.collectionVariables.get('sessionEventsSecondEventId'));",
+                  "    pm.expect(page.events[1].event_id).to.eql(pm.collectionVariables.get('sessionEventsFirstEventId'));",
+                  "});",
+                  "pm.test('earlier-occurred_at event has correct completion_percentage and late flag', function () {",
+                  "    pm.expect(page.events[0].quality.completion_percentage).to.eql(0.5);",
+                  "    pm.expect(page.events[0].quality.late).to.eql(true);",
+                  "    pm.expect(page.events[0].quality.out_of_order).to.eql(false);",
+                  "});",
+                  "pm.test('later-occurred_at event (arrived first in real time) is flagged out_of_order', function () {",
+                  "    pm.expect(page.events[1].quality.out_of_order).to.eql(true);",
+                  "    pm.expect(page.events[1].quality.completion_percentage).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "41. Get Session Events - Unauthenticated (Should Fail)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/sessions/{{sessionEventsSessionId}}/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "sessions",
+                "{{sessionEventsSessionId}}",
+                "events"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', function () { pm.response.to.have.status(401); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is MISSING_AUTHORIZATION_HEADER', function () { pm.expect(body.error).to.eql('MISSING_AUTHORIZATION_HEADER'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "42. Get Session Events - Invalid Session ID (Should Fail)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/sessions/not-a-uuid/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "sessions",
+                "not-a-uuid",
+                "events"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_SESSION_ID', function () { pm.expect(body.error).to.eql('INVALID_SESSION_ID'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "43. Get Session Events - Invalid Cursor (Should Fail)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/sessions/{{sessionEventsSessionId}}/events?cursor=not-a-valid-cursor",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "sessions",
+                "{{sessionEventsSessionId}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "cursor",
+                  "value": "not-a-valid-cursor"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_CURSOR', function () { pm.expect(body.error).to.eql('INVALID_CURSOR'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "44. Get Session Events - Invalid Limit (Should Fail)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/sessions/{{sessionEventsSessionId}}/events?limit=not-a-number",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "sessions",
+                "{{sessionEventsSessionId}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "not-a-number"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', function () { pm.response.to.have.status(400); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is INVALID_LIMIT', function () { pm.expect(body.error).to.eql('INVALID_LIMIT'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "45. Get Session Events - Not Found (Should Fail)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/sessions/{{$guid}}/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "sessions",
+                "{{$guid}}",
+                "events"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', function () { pm.response.to.have.status(404); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is SESSION_NOT_FOUND', function () { pm.expect(body.error).to.eql('SESSION_NOT_FOUND'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "46. Get Session Events - Ownership 404 For Different User (Should Fail)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/sessions/{{sessionEventsSessionId}}/events",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "sessions",
+                "{{sessionEventsSessionId}}",
+                "events"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404 \u2014 same code as never-existed, ownership is never leaked', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "pm.test('error code is SESSION_NOT_FOUND', function () { pm.expect(body.error).to.eql('SESSION_NOT_FOUND'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "47. Get Session Events - Pagination Page 1 (limit=1)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/sessions/{{sessionEventsSessionId}}/events?limit=1",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "sessions",
+                "{{sessionEventsSessionId}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "var page = body.data || {};",
+                  "pm.test('exactly one event, next_cursor set', function () {",
+                  "    pm.expect(page.events).to.have.lengthOf(1);",
+                  "    pm.expect(page.next_cursor).to.not.eql(null);",
+                  "});",
+                  "pm.collectionVariables.set('sessionEventsNextCursor', page.next_cursor);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "48. Get Session Events - Pagination Final Page (Follows next_cursor)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{pbUrl}}/v1/playback/sessions/{{sessionEventsSessionId}}/events?limit=1&cursor={{sessionEventsNextCursor}}",
+              "host": [
+                "{{pbUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playback",
+                "sessions",
+                "{{sessionEventsSessionId}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "1"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{sessionEventsNextCursor}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () { pm.response.to.have.status(200); });",
+                  "var body = {}; try { body = pm.response.json(); } catch (e) {}",
+                  "var page = body.data || {};",
+                  "pm.test('final page: one event, next_cursor null', function () {",
+                  "    pm.expect(page.events).to.have.lengthOf(1);",
+                  "    pm.expect(page.next_cursor).to.eql(null);",
+                  "    pm.expect(page.events[0].event_id).to.eql(pm.collectionVariables.get('sessionEventsFirstEventId'));",
                   "});"
                 ]
               }
