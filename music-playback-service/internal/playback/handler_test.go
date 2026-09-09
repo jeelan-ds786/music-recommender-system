@@ -10,11 +10,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	playbackauth "github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/auth"
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/logger"
 )
+
+// router builds a minimal chi router so GetSessionEvents can resolve
+// chi.URLParam the same way it does when mounted from cmd/server/main.go
+// — mirrors music-identity-gatekeeper/internal/playlist/handler_test.go's
+// identical-purpose helper.
+func router(h *Handler) chi.Router {
+	r := chi.NewRouter()
+	r.Get("/v1/playback/sessions/{sessionID}/events", h.GetSessionEvents)
+	return r
+}
 
 func withAuthedUser(req *http.Request, userID string) *http.Request {
 	ctx := context.WithValue(req.Context(), playbackauth.UserIDKey, userID)
@@ -217,6 +228,136 @@ func TestHandlerIngestRepositoryFailure(t *testing.T) {
 
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandlerGetSessionEventsSuccess(t *testing.T) {
+	now := time.Now()
+	event := Event{
+		ID: uuid.New(), ClientEventID: uuid.New(), SongID: uuid.New(),
+		Type: EventTypePlay, OccurredAt: now, IngestedAt: now, PositionMS: 0, DeviceType: "mobile",
+	}
+	sessionID := uuid.New()
+
+	repo := newFakeRepository()
+	repo.sessionEvents = []Event{event}
+	repo.sessionOverview = &SessionOverview{EventCount: 1, StartedAt: now, EndedAt: now, OutOfOrder: map[uuid.UUID]bool{}}
+	handler := NewHandler(NewService(repo, logger.New(logger.LevelNone)), logger.New(logger.LevelNone))
+
+	httpReq := withAuthedUser(
+		httptest.NewRequest(http.MethodGet, "/v1/playback/sessions/"+sessionID.String()+"/events", nil),
+		uuid.New().String(),
+	)
+	recorder := httptest.NewRecorder()
+
+	router(handler).ServeHTTP(recorder, httpReq)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var body struct {
+		Data SessionEventsPage `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data.Events) != 1 || body.Data.Events[0].EventID != event.ID {
+		t.Fatalf("Events = %+v, want the one fake event", body.Data.Events)
+	}
+	if body.Data.Session.EventCount != 1 {
+		t.Fatalf("Session.EventCount = %d, want 1", body.Data.Session.EventCount)
+	}
+}
+
+func TestHandlerGetSessionEventsUnauthenticated(t *testing.T) {
+	handler := NewHandler(NewService(newFakeRepository(), logger.New(logger.LevelNone)), logger.New(logger.LevelNone))
+
+	httpReq := httptest.NewRequest(http.MethodGet, "/v1/playback/sessions/"+uuid.New().String()+"/events", nil)
+	recorder := httptest.NewRecorder()
+
+	router(handler).ServeHTTP(recorder, httpReq)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestHandlerGetSessionEventsInvalidSessionID(t *testing.T) {
+	handler := NewHandler(NewService(newFakeRepository(), logger.New(logger.LevelNone)), logger.New(logger.LevelNone))
+
+	httpReq := withAuthedUser(
+		httptest.NewRequest(http.MethodGet, "/v1/playback/sessions/not-a-uuid/events", nil),
+		uuid.New().String(),
+	)
+	recorder := httptest.NewRecorder()
+
+	router(handler).ServeHTTP(recorder, httpReq)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+	if got := recorder.Body.String(); !jsonContains(t, got, "INVALID_SESSION_ID") {
+		t.Fatalf("body = %s, want INVALID_SESSION_ID", got)
+	}
+}
+
+func TestHandlerGetSessionEventsInvalidCursor(t *testing.T) {
+	handler := NewHandler(NewService(newFakeRepository(), logger.New(logger.LevelNone)), logger.New(logger.LevelNone))
+
+	httpReq := withAuthedUser(
+		httptest.NewRequest(http.MethodGet, "/v1/playback/sessions/"+uuid.New().String()+"/events?cursor=not-a-valid-cursor", nil),
+		uuid.New().String(),
+	)
+	recorder := httptest.NewRecorder()
+
+	router(handler).ServeHTTP(recorder, httpReq)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+	if got := recorder.Body.String(); !jsonContains(t, got, "INVALID_CURSOR") {
+		t.Fatalf("body = %s, want INVALID_CURSOR", got)
+	}
+}
+
+func TestHandlerGetSessionEventsInvalidLimit(t *testing.T) {
+	handler := NewHandler(NewService(newFakeRepository(), logger.New(logger.LevelNone)), logger.New(logger.LevelNone))
+
+	httpReq := withAuthedUser(
+		httptest.NewRequest(http.MethodGet, "/v1/playback/sessions/"+uuid.New().String()+"/events?limit=not-a-number", nil),
+		uuid.New().String(),
+	)
+	recorder := httptest.NewRecorder()
+
+	router(handler).ServeHTTP(recorder, httpReq)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+	if got := recorder.Body.String(); !jsonContains(t, got, "INVALID_LIMIT") {
+		t.Fatalf("body = %s, want INVALID_LIMIT", got)
+	}
+}
+
+func TestHandlerGetSessionEventsNotFound(t *testing.T) {
+	repo := newFakeRepository()
+	repo.sessionErr = ErrSessionNotFound
+	handler := NewHandler(NewService(repo, logger.New(logger.LevelNone)), logger.New(logger.LevelNone))
+
+	httpReq := withAuthedUser(
+		httptest.NewRequest(http.MethodGet, "/v1/playback/sessions/"+uuid.New().String()+"/events", nil),
+		uuid.New().String(),
+	)
+	recorder := httptest.NewRecorder()
+
+	router(handler).ServeHTTP(recorder, httpReq)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+	if got := recorder.Body.String(); !jsonContains(t, got, "SESSION_NOT_FOUND") {
+		t.Fatalf("body = %s, want SESSION_NOT_FOUND", got)
 	}
 }
 

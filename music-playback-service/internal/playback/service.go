@@ -12,9 +12,23 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/reqid"
 )
 
+const (
+	// defaultSessionEventsLimit/maxSessionEventsLimit mirror
+	// music-identity-gatekeeper's preference.ListLikedSongs precedent
+	// (20/100).
+	defaultSessionEventsLimit = 20
+	maxSessionEventsLimit     = 100
+
+	// lateThreshold is a judgment call — no existing precedent for this
+	// specific number anywhere in the codebase. Adjust if product
+	// guidance says otherwise.
+	lateThreshold = 5 * time.Minute
+)
+
 type Service interface {
 	IngestSingle(ctx context.Context, userID uuid.UUID, req IngestRequest) (*IngestResponse, *ValidationError, error)
 	IngestBatch(ctx context.Context, userID uuid.UUID, req BatchIngestRequest) ([]IngestResponse, *ValidationError, error)
+	GetSessionEvents(ctx context.Context, userID, sessionID uuid.UUID, cursor string, limit int) (*SessionEventsPage, error)
 }
 
 type service struct {
@@ -134,4 +148,101 @@ func (s *service) store(ctx context.Context, userID uuid.UUID, req IngestRequest
 		ClientEventID: req.ClientEventID,
 		Status:        status,
 	}, nil, nil
+}
+
+func (s *service) GetSessionEvents(
+	ctx context.Context,
+	userID, sessionID uuid.UUID,
+	cursor string,
+	limit int,
+) (*SessionEventsPage, error) {
+
+	rid, _ := reqid.FromContext(ctx)
+
+	s.log.Debug(rid, "Starting GetSessionEvents for user_id=%s session_id=%s", userID, sessionID)
+
+	var c *Cursor
+	if cursor != "" {
+		decoded, err := DecodeCursor(cursor)
+		if err != nil {
+			s.log.Error(rid, "Ending GetSessionEvents for user_id=%s session_id=%s (invalid cursor %q: %v)", userID, sessionID, cursor, err)
+			return nil, err
+		}
+		c = decoded
+	}
+
+	if limit <= 0 {
+		limit = defaultSessionEventsLimit
+	}
+	if limit > maxSessionEventsLimit {
+		limit = maxSessionEventsLimit
+	}
+
+	events, overview, next, err := s.repo.GetSessionEvents(ctx, userID, sessionID, c, limit)
+	if err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			s.log.Error(rid, "Ending GetSessionEvents for user_id=%s session_id=%s (not found)", userID, sessionID)
+		} else {
+			s.log.Error(rid, "Ending GetSessionEvents for user_id=%s session_id=%s (failed: %v)", userID, sessionID, err)
+		}
+		return nil, err
+	}
+
+	items := make([]SessionEventResponse, 0, len(events))
+	for _, e := range events {
+		items = append(items, SessionEventResponse{
+			EventID:       e.ID,
+			ClientEventID: e.ClientEventID,
+			SongID:        e.SongID,
+			EventType:     e.Type,
+			OccurredAt:    e.OccurredAt,
+			IngestedAt:    e.IngestedAt,
+			PositionMS:    e.PositionMS,
+			DurationMS:    e.DurationMS,
+			DeviceType:    e.DeviceType,
+			Quality:       computeQuality(e, overview.OutOfOrder[e.ID]),
+		})
+	}
+
+	page := &SessionEventsPage{
+		Session: SessionSummaryResponse{
+			SessionID:  sessionID,
+			EventCount: overview.EventCount,
+			StartedAt:  overview.StartedAt,
+			EndedAt:    overview.EndedAt,
+			DurationMS: overview.DurationMS,
+		},
+		Events: items,
+	}
+	if next != nil {
+		encoded := EncodeCursor(*next)
+		page.NextCursor = &encoded
+	}
+
+	s.log.Info(rid, "Ending GetSessionEvents for user_id=%s session_id=%s (event_count=%d)", userID, sessionID, len(items))
+
+	return page, nil
+}
+
+// computeQuality derives read-time-only flags from an event's own facts.
+// Unlike OutOfOrder (session-wide, computed by the repository), Late and
+// CompletionPercentage only need the event's own fields.
+func computeQuality(e Event, outOfOrder bool) EventQuality {
+	quality := EventQuality{
+		OutOfOrder: outOfOrder,
+		Late:       e.IngestedAt.Sub(e.OccurredAt) > lateThreshold,
+	}
+
+	if e.DurationMS != nil && *e.DurationMS > 0 {
+		pct := float64(e.PositionMS) / float64(*e.DurationMS)
+		switch {
+		case pct < 0:
+			pct = 0
+		case pct > 1:
+			pct = 1
+		}
+		quality.CompletionPercentage = &pct
+	}
+
+	return quality
 }

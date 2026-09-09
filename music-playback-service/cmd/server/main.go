@@ -87,6 +87,7 @@ func newRouter(database databasePinger, pool *pgxpool.Pool, jwtSecret string, ap
 		r.Use(auth.Middleware(jwtSecret, appLogger))
 		r.Post("/v1/playback/events", playbackHandler.Ingest)
 		r.Post("/v1/playback/events:batch", playbackHandler.IngestBatch)
+		r.Get("/v1/playback/sessions/{sessionID}/events", playbackHandler.GetSessionEvents)
 	})
 
 	return router
