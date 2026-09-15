@@ -33,9 +33,14 @@ type Event struct {
 	IngestedAt    time.Time
 }
 
-type Session struct {
-	ID        uuid.UUID
-	UserID    uuid.UUID
-	StartedAt time.Time
-	EndedAt   *time.Time
+// SessionOverview is derived at query time from a session's full set of
+// events — never persisted, never a state machine. See
+// repository.go's GetSessionEvents/detectOutOfOrder for how OutOfOrder is
+// computed.
+type SessionOverview struct {
+	EventCount int
+	StartedAt  time.Time
+	EndedAt    time.Time
+	DurationMS int64
+	OutOfOrder map[uuid.UUID]bool
 }

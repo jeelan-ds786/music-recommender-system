@@ -48,3 +48,42 @@ type IngestResponse struct {
 type BatchIngestResponse struct {
 	Results []IngestResponse `json:"results"`
 }
+
+// SessionSummaryResponse is derived from the whole session's events at
+// query time — see SessionOverview in model.go.
+type SessionSummaryResponse struct {
+	SessionID  uuid.UUID `json:"session_id"`
+	EventCount int       `json:"event_count"`
+	StartedAt  time.Time `json:"started_at"`
+	EndedAt    time.Time `json:"ended_at"`
+	DurationMS int64     `json:"duration_ms"`
+}
+
+// EventQuality flags are computed fresh on every read, never stored.
+// CompletionPercentage is nil when duration_ms is unknown (nil or 0).
+type EventQuality struct {
+	Late                 bool     `json:"late"`
+	OutOfOrder           bool     `json:"out_of_order"`
+	CompletionPercentage *float64 `json:"completion_percentage"`
+}
+
+type SessionEventResponse struct {
+	EventID       uuid.UUID    `json:"event_id"`
+	ClientEventID uuid.UUID    `json:"client_event_id"`
+	SongID        uuid.UUID    `json:"song_id"`
+	EventType     EventType    `json:"event_type"`
+	OccurredAt    time.Time    `json:"occurred_at"`
+	IngestedAt    time.Time    `json:"ingested_at"`
+	PositionMS    int64        `json:"position_ms"`
+	DurationMS    *int64       `json:"duration_ms"`
+	DeviceType    string       `json:"device_type"`
+	Quality       EventQuality `json:"quality"`
+}
+
+type SessionEventsPage struct {
+	Session SessionSummaryResponse `json:"session"`
+	Events  []SessionEventResponse `json:"events"`
+	// Not omitempty — the last page returns an explicit null, matching
+	// preference.LikedSongsPage's convention.
+	NextCursor *string `json:"next_cursor"`
+}
