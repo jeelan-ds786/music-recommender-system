@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 
+	playbackevent "github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/event"
+	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/event/eventpb"
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/logger"
 )
 
@@ -17,6 +20,7 @@ type fakeRepository struct {
 	// and inserted=false, exactly like the real ON CONFLICT DO NOTHING +
 	// follow-up SELECT.
 	byKey map[[2]uuid.UUID]uuid.UUID
+  messages []playbackevent.Message
 	err   error
 
 	// GetSessionEvents fakes — configured directly by tests that need
@@ -32,7 +36,7 @@ func newFakeRepository() *fakeRepository {
 	return &fakeRepository{byKey: make(map[[2]uuid.UUID]uuid.UUID)}
 }
 
-func (r *fakeRepository) Insert(_ context.Context, event *Event) (bool, error) {
+func (r *fakeRepository) Insert(_ context.Context, event *Event, message playbackevent.Message) (bool, error) {
 	if r.err != nil {
 		return false, r.err
 	}
@@ -44,6 +48,7 @@ func (r *fakeRepository) Insert(_ context.Context, event *Event) (bool, error) {
 	}
 
 	r.byKey[key] = event.ID
+	r.messages = append(r.messages, message)
 	return true, nil
 }
 
@@ -56,7 +61,9 @@ func (r *fakeRepository) GetSessionEvents(_ context.Context, _, _ uuid.UUID, _ *
 
 func TestIngestSingle(t *testing.T) {
 	repo := newFakeRepository()
-	svc := NewService(repo, logger.New(logger.LevelNone))
+	publisher := &playbackevent.FakePublisher{}
+	direct := playbackevent.NewDirect(&fakeOutbox{}, publisher)
+	svc := NewService(repo, logger.New(logger.LevelNone), WithDirectPublisher(direct))
 	userID := uuid.New()
 	req := validRequest()
 
@@ -82,6 +89,34 @@ func TestIngestSingle(t *testing.T) {
 	if resp2.EventID != resp.EventID {
 		t.Fatalf("retry event_id = %s, want the original %s", resp2.EventID, resp.EventID)
 	}
+	if len(repo.messages) != 1 || len(publisher.Published) != 1 {
+		t.Fatalf("accepted and duplicate calls created %d outbox messages and %d publishes, want 1 each", len(repo.messages), len(publisher.Published))
+	}
+
+	message := publisher.Published[0]
+	if message.Topic != playbackevent.PlaybackTopic || message.Key != userID.String() {
+		t.Fatalf("published routing = topic %q key %q", message.Topic, message.Key)
+	}
+	if message.Headers[playbackevent.HeaderContentType] != playbackevent.ProtobufContentType ||
+		message.Headers[playbackevent.HeaderEventType] != string(req.EventType) ||
+		message.Headers[playbackevent.HeaderSchemaVersion] != "1" {
+		t.Fatalf("published headers = %#v", message.Headers)
+	}
+	var envelope eventpb.PlaybackEventV1
+	if err := proto.Unmarshal(message.Payload, &envelope); err != nil {
+		t.Fatalf("unmarshal published payload: %v", err)
+	}
+	if envelope.EventId != resp.EventID.String() || envelope.UserId != userID.String() || envelope.SchemaVersion != 1 {
+		t.Fatalf("published envelope = %s", envelope.String())
+	}
+}
+
+type fakeOutbox struct{}
+
+func (*fakeOutbox) MarkPublished(context.Context, uuid.UUID) error         { return nil }
+func (*fakeOutbox) RecordFailure(context.Context, uuid.UUID, string) error { return nil }
+func (*fakeOutbox) FetchPending(context.Context, int, int) ([]playbackevent.Message, error) {
+	return nil, nil
 }
 
 func TestIngestSingleInvalid(t *testing.T) {
@@ -154,12 +189,12 @@ type failOnCallRepository struct {
 	calls      *int
 }
 
-func (r *failOnCallRepository) Insert(ctx context.Context, event *Event) (bool, error) {
+func (r *failOnCallRepository) Insert(ctx context.Context, event *Event, message playbackevent.Message) (bool, error) {
 	*r.calls++
 	if *r.calls == r.failOnCall {
 		return false, r.err
 	}
-	return r.fakeRepository.Insert(ctx, event)
+	return r.fakeRepository.Insert(ctx, event, message)
 }
 
 func TestIngestSingleRepositoryError(t *testing.T) {

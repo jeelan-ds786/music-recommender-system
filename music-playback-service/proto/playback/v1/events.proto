@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package playback.v1;
+
+option go_package = "github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/event/eventpb;eventpb";
+
+import "google/protobuf/timestamp.proto";
+
+message PlaybackEventV1 {
+  string event_id = 1;
+  string event_type = 2;
+  int32 schema_version = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  google.protobuf.Timestamp produced_at = 5;
+  string producer = 6;
+  string trace_id = 7;
+  string user_id = 8;
+  string client_event_id = 9;
+  string song_id = 10;
+  string session_id = 11;
+  int64 position_ms = 12;
+  optional int64 duration_ms = 13;
+  string device_type = 14;
+  bytes context = 15;
+}
