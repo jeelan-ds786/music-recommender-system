@@ -2,6 +2,7 @@ package httplog
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -11,12 +12,13 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/reqid"
 )
 
+type Observer interface {
+	ObserveHTTPRequest(method, route, status string, latency time.Duration)
+}
+
 // Middleware emits one completion event per request. Headers and bodies are
 // intentionally excluded so credentials and tokens cannot enter the logs.
-// No metrics Observer parameter yet (unlike identity-gatekeeper's) — bounded-
-// label Prometheus metrics are E3-SS-05 scope; this can grow the same
-// variadic Observer hook then.
-func Middleware(log *logger.Logger) func(http.Handler) http.Handler {
+func Middleware(log *logger.Logger, observers ...Observer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			started := time.Now()
@@ -27,6 +29,10 @@ func Middleware(log *logger.Logger) func(http.Handler) http.Handler {
 			route := chi.RouteContext(r.Context()).RoutePattern()
 			if route == "" {
 				route = "unmatched"
+			}
+			status := strconv.Itoa(recorder.Status())
+			for _, observer := range observers {
+				observer.ObserveHTTPRequest(r.Method, route, status, latency)
 			}
 
 			rid, _ := reqid.FromContext(r.Context())

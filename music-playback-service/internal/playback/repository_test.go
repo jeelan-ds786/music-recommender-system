@@ -292,7 +292,7 @@ func insertSessionEvent(t *testing.T, repo *PostgresRepository, userID, sessionI
 	event.SessionID = sessionID
 	event.OccurredAt = occurredAt
 
-	if _, err := repo.Insert(context.Background(), event); err != nil {
+	if _, err := repo.Insert(context.Background(), event, newTestMessage(event)); err != nil {
 		t.Fatalf("Insert() error = %v", err)
 	}
 	return event

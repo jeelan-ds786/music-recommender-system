@@ -42,7 +42,7 @@ type Repository interface {
 	// Insert stores event, or — if (user_id, client_event_id) already
 	// exists — leaves event.ID pointing at the existing row instead.
 	// Returns true only when this call actually created a new row.
-	Insert(ctx context.Context, event *Event) (inserted bool, err error)
+	Insert(ctx context.Context, event *Event, message playbackevent.Message) (inserted bool, err error)
 
 	// GetSessionEvents returns one page of a session's events (ordered
 	// (occurred_at, id) ASC), the session-wide overview (event count,

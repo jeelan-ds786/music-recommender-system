@@ -19,9 +19,9 @@ type fakeRepository struct {
 	// a second Insert for the same key returns the first call's event ID
 	// and inserted=false, exactly like the real ON CONFLICT DO NOTHING +
 	// follow-up SELECT.
-	byKey map[[2]uuid.UUID]uuid.UUID
-  messages []playbackevent.Message
-	err   error
+	byKey    map[[2]uuid.UUID]uuid.UUID
+	messages []playbackevent.Message
+	err      error
 
 	// GetSessionEvents fakes — configured directly by tests that need
 	// them; zero value (nil, nil, nil, nil) is fine for every test that
@@ -117,6 +117,54 @@ func (*fakeOutbox) MarkPublished(context.Context, uuid.UUID) error         { ret
 func (*fakeOutbox) RecordFailure(context.Context, uuid.UUID, string) error { return nil }
 func (*fakeOutbox) FetchPending(context.Context, int, int) ([]playbackevent.Message, error) {
 	return nil, nil
+}
+
+type fakeMetrics struct {
+	statuses  map[string]int
+	batchSize int
+	latencies int
+}
+
+func (m *fakeMetrics) ObserveIngest(status string, count int) {
+	m.statuses[status] += count
+}
+
+func (m *fakeMetrics) ObserveBatchSize(size int) {
+	m.batchSize = size
+}
+
+func (m *fakeMetrics) ObserveIngestLatency(time.Duration) {
+	m.latencies++
+}
+
+func TestIngestMetrics(t *testing.T) {
+	observer := &fakeMetrics{statuses: make(map[string]int)}
+	svc := NewService(newFakeRepository(), logger.New(logger.LevelNone), WithMetrics(observer))
+	userID := uuid.New()
+	request := validRequest()
+
+	if _, validationErr, err := svc.IngestSingle(context.Background(), userID, request); validationErr != nil || err != nil {
+		t.Fatalf("accepted ingestion failed: validation=%v error=%v", validationErr, err)
+	}
+	if _, validationErr, err := svc.IngestSingle(context.Background(), userID, request); validationErr != nil || err != nil {
+		t.Fatalf("duplicate ingestion failed: validation=%v error=%v", validationErr, err)
+	}
+	invalid := validRequest()
+	invalid.EventType = "bogus"
+	if _, validationErr, err := svc.IngestSingle(context.Background(), userID, invalid); validationErr == nil || err != nil {
+		t.Fatalf("invalid ingestion = validation %v, error %v", validationErr, err)
+	}
+	batch := BatchIngestRequest{Events: []IngestRequest{validRequest(), validRequest()}}
+	if _, validationErr, err := svc.IngestBatch(context.Background(), userID, batch); validationErr != nil || err != nil {
+		t.Fatalf("batch ingestion failed: validation=%v error=%v", validationErr, err)
+	}
+
+	if observer.statuses["accepted"] != 3 || observer.statuses["duplicate"] != 1 || observer.statuses["rejected"] != 1 {
+		t.Fatalf("ingest statuses = %#v", observer.statuses)
+	}
+	if observer.batchSize != 2 || observer.latencies != 4 {
+		t.Fatalf("batch size = %d, latency observations = %d", observer.batchSize, observer.latencies)
+	}
 }
 
 func TestIngestSingleInvalid(t *testing.T) {

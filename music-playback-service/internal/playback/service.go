@@ -36,8 +36,13 @@ type Service interface {
 }
 
 type service struct {
-	repo   Repository
-	log    *logger.Logger
+	repo    Repository
+	log     *logger.Logger
+	metrics interface {
+		ObserveIngest(status string, count int)
+		ObserveBatchSize(size int)
+		ObserveIngestLatency(latency time.Duration)
+	}
 	direct interface {
 		Publish(context.Context, playbackevent.Message)
 	}
@@ -54,6 +59,16 @@ func WithDirectPublisher(direct interface {
 	}
 }
 
+func WithMetrics(observer interface {
+	ObserveIngest(status string, count int)
+	ObserveBatchSize(size int)
+	ObserveIngestLatency(latency time.Duration)
+}) ServiceOption {
+	return func(service *service) {
+		service.metrics = observer
+	}
+}
+
 func NewService(repo Repository, log *logger.Logger, options ...ServiceOption) Service {
 	service := &service{repo: repo, log: log, now: time.Now}
 	for _, option := range options {
@@ -67,25 +82,33 @@ func (s *service) IngestSingle(
 	userID uuid.UUID,
 	req IngestRequest,
 ) (*IngestResponse, *ValidationError, error) {
+	started := time.Now()
+	if s.metrics != nil {
+		defer func() { s.metrics.ObserveIngestLatency(time.Since(started)) }()
+	}
 
 	rid, _ := reqid.FromContext(ctx)
 
 	s.log.Debug(rid, "Starting IngestSingle for user_id=%s client_event_id=%s", userID, req.ClientEventID)
 
 	if validationErr := ValidateIngest(req, s.now(), ""); validationErr != nil {
+		s.observeIngest("rejected", 1)
 		s.log.Error(rid, "Ending IngestSingle for user_id=%s (validation failed: %s on field=%s)", userID, validationErr.Error, validationErr.Field)
 		return nil, validationErr, nil
 	}
 
 	resp, validationErr, err := s.store(ctx, userID, req)
 	if err != nil {
+		s.observeIngest("rejected", 1)
 		s.log.Error(rid, "Ending IngestSingle for user_id=%s (failed: %v)", userID, err)
 		return nil, nil, err
 	}
 	if validationErr != nil {
+		s.observeIngest("rejected", 1)
 		s.log.Error(rid, "Ending IngestSingle for user_id=%s (validation failed: %s on field=%s)", userID, validationErr.Error, validationErr.Field)
 		return nil, validationErr, nil
 	}
+	s.observeIngest(string(resp.Status), 1)
 
 	s.log.Info(rid, "Ending IngestSingle for user_id=%s (event_id=%s status=%s)", userID, resp.EventID, resp.Status)
 
@@ -97,6 +120,11 @@ func (s *service) IngestBatch(
 	userID uuid.UUID,
 	req BatchIngestRequest,
 ) ([]IngestResponse, *ValidationError, error) {
+	started := time.Now()
+	if s.metrics != nil {
+		s.metrics.ObserveBatchSize(len(req.Events))
+		defer func() { s.metrics.ObserveIngestLatency(time.Since(started)) }()
+	}
 
 	rid, _ := reqid.FromContext(ctx)
 
@@ -104,6 +132,7 @@ func (s *service) IngestBatch(
 
 	// All-or-nothing: validate every event before writing any of them.
 	if validationErr := ValidateBatch(req, s.now()); validationErr != nil {
+		s.observeIngest("rejected", len(req.Events))
 		s.log.Error(rid, "Ending IngestBatch for user_id=%s (validation failed: %s on field=%s)", userID, validationErr.Error, validationErr.Field)
 		return nil, validationErr, nil
 	}
@@ -112,10 +141,12 @@ func (s *service) IngestBatch(
 	for i, event := range req.Events {
 		resp, validationErr, err := s.store(ctx, userID, event)
 		if err != nil {
+			s.observeIngest("rejected", 1)
 			s.log.Error(rid, "Ending IngestBatch for user_id=%s (failed at index=%d: %v)", userID, i, err)
 			return nil, nil, err
 		}
 		if validationErr != nil {
+			s.observeIngest("rejected", 1)
 			// Every prior event in this batch was already inserted — batch
 			// writes aren't wrapped in one transaction, so this specific
 			// DB-detected case (see mapContextCheckViolation) can't fully
@@ -130,10 +161,19 @@ func (s *service) IngestBatch(
 		}
 		results = append(results, *resp)
 	}
+	for _, result := range results {
+		s.observeIngest(string(result.Status), 1)
+	}
 
 	s.log.Info(rid, "Ending IngestBatch for user_id=%s (event_count=%d)", userID, len(results))
 
 	return results, nil, nil
+}
+
+func (s *service) observeIngest(status string, count int) {
+	if s.metrics != nil && count > 0 {
+		s.metrics.ObserveIngest(status, count)
+	}
 }
 
 func (s *service) store(ctx context.Context, userID uuid.UUID, req IngestRequest) (*IngestResponse, *ValidationError, error) {
