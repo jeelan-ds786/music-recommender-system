@@ -34,6 +34,11 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 
 	var req IngestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			response.Error(w, http.StatusRequestEntityTooLarge, "REQUEST_BODY_TOO_LARGE")
+			return
+		}
 		h.log.Error(rid, "Ingest rejected: invalid request body: %v", err)
 		response.Error(w, http.StatusBadRequest, "INVALID_REQUEST_BODY")
 		return
@@ -63,6 +68,11 @@ func (h *Handler) IngestBatch(w http.ResponseWriter, r *http.Request) {
 
 	var req BatchIngestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			response.Error(w, http.StatusRequestEntityTooLarge, "REQUEST_BODY_TOO_LARGE")
+			return
+		}
 		h.log.Error(rid, "IngestBatch rejected: invalid request body: %v", err)
 		response.Error(w, http.StatusBadRequest, "INVALID_REQUEST_BODY")
 		return

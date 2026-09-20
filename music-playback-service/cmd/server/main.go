@@ -21,11 +21,16 @@ import (
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/health"
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/httplog"
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/logger"
+	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/metrics"
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/playback"
 	"github.com/jeelan-ds786/music-recommender-system/music-playback-service/internal/reqid"
 )
 
-const shutdownTimeout = 10 * time.Second
+const (
+	shutdownTimeout = 10 * time.Second
+	maxBodyBytes    = 512 << 10
+	maxHeaderBytes  = 16 << 10
+)
 
 type databasePinger interface {
 	Ping(context.Context) error
@@ -53,18 +58,21 @@ func main() {
 		log.Fatal(err)
 	}
 	defer pool.Close()
+	serviceMetrics := metrics.New(pool)
 
 	shutdownContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	serviceOptions := make([]playback.ServiceOption, 0, 1)
+	serviceOptions = append(serviceOptions, playback.WithMetrics(serviceMetrics))
 	if brokers := splitBrokers(os.Getenv("KAFKA_BROKERS")); len(brokers) > 0 {
-		publisher := playbackevent.NewKafkaPublisher(brokers)
+		kafkaPublisher := playbackevent.NewKafkaPublisher(brokers)
 		defer func() {
-			if closeErr := publisher.Close(); closeErr != nil {
+			if closeErr := kafkaPublisher.Close(); closeErr != nil {
 				appLogger.Error("", "failed to close Kafka publisher: %v", closeErr)
 			}
 		}()
+		publisher := serviceMetrics.InstrumentPublisher(kafkaPublisher)
 
 		outbox := playbackevent.NewOutbox(pool)
 		serviceOptions = append(serviceOptions, playback.WithDirectPublisher(playbackevent.NewDirect(outbox, publisher)))
@@ -74,15 +82,23 @@ func main() {
 		}
 	}
 
-	server := &http.Server{
-		Addr:              ":" + port,
-		Handler:           newRouter(pool, pool, jwtSecret, appLogger, serviceOptions...),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	server := newHTTPServer(":"+port, newRouter(pool, pool, jwtSecret, appLogger, serviceMetrics, serviceOptions...))
 
 	log.Printf("playback HTTP server listening on :%s", port)
 	if err := serve(shutdownContext, server); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func newHTTPServer(address string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              address,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    maxHeaderBytes,
 	}
 }
 
@@ -91,15 +107,25 @@ func main() {
 // Ping, while the playback repository needs actual query methods a stub
 // doesn't provide. Pass nil for pool in tests that don't touch the
 // playback routes.
-func newRouter(database databasePinger, pool *pgxpool.Pool, jwtSecret string, appLogger *logger.Logger, serviceOptions ...playback.ServiceOption) http.Handler {
+func newRouter(database databasePinger, pool *pgxpool.Pool, jwtSecret string, appLogger *logger.Logger, serviceMetrics *metrics.Metrics, serviceOptions ...playback.ServiceOption) http.Handler {
 	router := chi.NewRouter()
 	router.Use(reqid.Middleware)
-	router.Use(httplog.Middleware(appLogger))
+	if serviceMetrics == nil {
+		serviceMetrics = metrics.New(nil)
+	}
+	router.Use(httplog.Middleware(appLogger, serviceMetrics))
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+			next.ServeHTTP(w, r)
+		})
+	})
 
 	healthHandler := health.NewHandler(2*time.Second, health.Check{Name: "postgres", Ping: database.Ping})
 
 	router.Get("/health/live", healthHandler.Live)
 	router.Get("/health/ready", healthHandler.Ready)
+	router.Handle("/metrics", serviceMetrics.Handler())
 
 	playbackHandler := playback.NewHandler(playback.NewService(playback.NewRepository(pool), appLogger, serviceOptions...), appLogger)
 

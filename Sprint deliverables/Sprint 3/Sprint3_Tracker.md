@@ -41,15 +41,15 @@ The detailed contracts, estimates, and acceptance criteria are in [Sprint3_TODOS
 | Status | ID | Story | Owner | Estimate | Dependencies | PR | Evidence |
 | --- | --- | --- | --- | ---: | --- | --- | --- |
 | [x] | S3-GATE-01 | Resolve catalog scaffold overlap | A+B | 4h | None | [#29](https://github.com/jeelan-ds786/music-recommender-system/pull/29), [#30](https://github.com/jeelan-ds786/music-recommender-system/pull/30) | Both merged in order; local acceptance suite passed on `main` at `81d620b`. |
-| [~] | E3-SS-01 | Playback scaffold, schema, contracts | B | 10h | S3-GATE-01 | Pending | Implemented locally; all acceptance checks pass on `main` plus the working tree. Awaiting PR review and merge. |
-| [ ] | E3-SS-02 | Authenticated single/batch ingestion | A | 8h | E3-SS-01 | | |
-| [ ] | E3-SS-03 | Session semantics and integrity | A | 7h | E3-SS-02 | | |
+| [x] | E3-SS-01 | Playback scaffold, schema, contracts | B | 10h | S3-GATE-01 | [#32](https://github.com/jeelan-ds786/music-recommender-system/pull/32) | Merged as `9788eb4`. |
+| [x] | E3-SS-02 | Authenticated single/batch ingestion | A | 8h | E3-SS-01 | [#33](https://github.com/jeelan-ds786/music-recommender-system/pull/33) | Merged as `c08a271`. |
+| [x] | E3-SS-03 | Session semantics and integrity | A | 7h | E3-SS-02 | [#35](https://github.com/jeelan-ds786/music-recommender-system/pull/35) | Merged as `39b021a`. |
 | [ ] | E4-SS-01 | Topic topology and versioned contracts | B | 6h | E3-SS-01 | | |
-| [ ] | E3-SS-04 | Transactional outbox and publication | B | 9h | E3-SS-01, E3-SS-02, E4-SS-01 | | |
+| [x] | E3-SS-04 | Transactional outbox and publication | B | 9h | E3-SS-01, E3-SS-02, E4-SS-01 | [#34](https://github.com/jeelan-ds786/music-recommender-system/pull/34) | Merged as `79fbff6`; local `main` fast-forwarded to this commit. |
 | [ ] | E4-SS-02 | Consumer runtime and offsets | A | 9h | E4-SS-01, E3-SS-04 | | |
 | [ ] | E4-SS-03 | Retry and dead-letter handling | B | 8h | E4-SS-02 | | |
 | [ ] | E4-SS-04 | Operator-controlled replay | A | 7h | E4-SS-02, E4-SS-03 | | |
-| [ ] | E3-SS-05 | Playback observability/hardening | A | 5h | E3-SS-02, E3-SS-03, E3-SS-04 | | |
+| [~] | E3-SS-05 | Playback observability/hardening | A | 5h | E3-SS-02, E3-SS-03, E3-SS-04 | Pending | Implemented locally: bounded Prometheus metrics, secure request completion logs, HTTP limits, tests, and service documentation. Awaiting review and merge. |
 | [ ] | E4-SS-05 | Multi-topic platform/observability | B | 7h | E4-SS-02, E4-SS-03, E4-SS-04 | | |
 | [ ] | S3-REL-01 | E2E, CI, docs, `v0.3.0` | A+B | 8h | All above | | |
 
@@ -295,7 +295,7 @@ Update daily.
 | Protected buffer | 10 | 10 |
 | P0 stories blocked over 1 day | 0 | 0 |
 | Open P0 PRs older than 1 day | 0 | 0 |
-| Stories merged | 12 | 1 |
+| Stories merged | 12 | 5 |
 | E2E clean passes | 2 | 0 |
 | Untriaged spillover items | 0 | 0 |
 
