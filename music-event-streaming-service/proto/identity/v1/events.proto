@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package identity.v1;
+
+option go_package = "github.com/jeelan-ds786/music-recommender-system/music-event-streaming-service/internal/contracts/identitypb;identitypb";
+
+import "google/protobuf/timestamp.proto";
+
+message EventMetadata {
+  string event_id = 1;
+  string event_type = 2;
+  int32 schema_version = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  string user_id = 5;
+}
+
+message UserRegistered {
+  EventMetadata metadata = 1;
+  string email = 2;
+}
+
+message UserPreferenceUpdated {
+  EventMetadata metadata = 1;
+}
+
+message PlaylistUpdated {
+  EventMetadata metadata = 1;
+  string playlist_id = 2;
+  string operation = 3;
+}

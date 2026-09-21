@@ -38,6 +38,19 @@ services:
       timeout: 5s
       retries: 5
 
+  streaming-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: muse_streaming
+      POSTGRES_USER: muse
+      POSTGRES_PASSWORD: secret
+    ports: ["5435:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U muse -d muse_streaming"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
@@ -76,8 +89,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
       interval: 5s
-      timeout: 5s
-      retries: 10
+      timeout: 20s
+      retries: 12
+      start_period: 30s
 
   # One-shot: creates the event topics after kafka is healthy, then exits.
   # Explicit init rather than relying on broker auto-create, per E1-SS-08.
@@ -88,10 +102,13 @@ services:
         condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
     command: >
-      "/opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.registered --partitions 1 --replication-factor 1 &&
-       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.preference.updated --partitions 1 --replication-factor 1 &&
-        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.playlist.updated --partitions 1 --replication-factor 1 &&
-        /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic playback.event.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000"
+      "/opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.registered --partitions 1 --replication-factor 1 --config retention.ms=604800000 &&
+       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.preference.updated --partitions 1 --replication-factor 1 --config retention.ms=604800000 &&
+       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic user.playlist.updated --partitions 1 --replication-factor 1 --config retention.ms=604800000 &&
+       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic playback.event.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 &&
+       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic recommendation.feedback.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 &&
+       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic event.retry.v1 --partitions 3 --replication-factor 1 --config retention.ms=604800000 &&
+       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic event.dlq.v1 --partitions 1 --replication-factor 1 --config retention.ms=2592000000"
 
   identity-svc:
     build: ./music-identity-gatekeeper
@@ -156,3 +173,37 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  streaming-migrate:
+    image: migrate/migrate:v4.19.1
+    depends_on:
+      streaming-postgres:
+        condition: service_healthy
+    volumes:
+      - ./music-event-streaming-service/migrations:/migrations:ro
+    command: ["-path", "/migrations", "-database", "postgres://muse:secret@streaming-postgres:5432/muse_streaming?sslmode=disable", "up"]
+    restart: "no"
+
+  streaming-svc:
+    build: ./music-event-streaming-service
+    ports: ["8083:8083"]
+    depends_on:
+      streaming-postgres:
+        condition: service_healthy
+      streaming-migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      PORT: "8083"
+      DB_URL: "postgres://muse:secret@streaming-postgres:5432/muse_streaming?sslmode=disable"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_TOPICS: "playback.event.v1,user.registered,user.preference.updated,user.playlist.updated"
+      KAFKA_GROUP_ID: "music-event-streaming-v1"
+      CONSUMER_CONCURRENCY: "4"
+      DRAIN_TIMEOUT: "30s"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8083/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

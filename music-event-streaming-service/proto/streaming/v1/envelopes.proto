@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package streaming.v1;
+
+option go_package = "github.com/jeelan-ds786/music-recommender-system/music-event-streaming-service/internal/contracts/streamingpb;streamingpb";
+
+import "google/protobuf/timestamp.proto";
+
+message RetryEnvelopeV1 {
+  string event_id = 1;
+  string original_topic = 2;
+  int32 original_partition = 3;
+  int64 original_offset = 4;
+  bytes original_key = 5;
+  bytes original_payload = 6;
+  int32 schema_version = 7;
+  int32 attempt = 8;
+  google.protobuf.Timestamp retry_at = 9;
+  string trace_id = 10;
+}
+
+message DeadLetterEnvelopeV1 {
+  string event_id = 1;
+  string original_topic = 2;
+  int32 original_partition = 3;
+  int64 original_offset = 4;
+  bytes original_key = 5;
+  bytes original_payload = 6;
+  int32 schema_version = 7;
+  string failure_class = 8;
+  string trace_id = 9;
+  google.protobuf.Timestamp failed_at = 10;
+}

@@ -3,9 +3,9 @@
 **Sprint goal:** Deliver the playback telemetry collection pipeline and the real-time Kafka processing platform, including durable publication, retry/DLQ, bounded replay, observability, and release evidence.
 
 **Dates:** Record at kickoff  
-**Team:** Developer A and Developer B  
-**Duration:** 7 working days  
-**Capacity:** 98 hours total; 88 planned; 10 protected for integration/recovery  
+**Team:** One developer
+**Remaining duration:** 7 working days
+**Remaining capacity:** 49 hours total; 45 planned; 4 protected for integration/recovery
 **Release target:** `v0.3.0`
 
 The detailed contracts, estimates, and acceptance criteria are in [Sprint3_TODOS.md](Sprint3_TODOS.md). This tracker records execution evidence only.
@@ -44,18 +44,32 @@ The detailed contracts, estimates, and acceptance criteria are in [Sprint3_TODOS
 | [x] | E3-SS-01 | Playback scaffold, schema, contracts | B | 10h | S3-GATE-01 | [#32](https://github.com/jeelan-ds786/music-recommender-system/pull/32) | Merged as `9788eb4`. |
 | [x] | E3-SS-02 | Authenticated single/batch ingestion | A | 8h | E3-SS-01 | [#33](https://github.com/jeelan-ds786/music-recommender-system/pull/33) | Merged as `c08a271`. |
 | [x] | E3-SS-03 | Session semantics and integrity | A | 7h | E3-SS-02 | [#35](https://github.com/jeelan-ds786/music-recommender-system/pull/35) | Merged as `39b021a`. |
-| [ ] | E4-SS-01 | Topic topology and versioned contracts | B | 6h | E3-SS-01 | | |
+| [~] | E4-SS-01 | Topic topology and versioned contracts | Developer | 6h | E3-SS-01 | E4-PR-01 | Implemented locally with checked-in Protobuf bindings, explicit topic configuration, contract tests, and documentation. All seven topics were created successfully against Kafka 4.3.1; awaiting review and merge. |
 | [x] | E3-SS-04 | Transactional outbox and publication | B | 9h | E3-SS-01, E3-SS-02, E4-SS-01 | [#34](https://github.com/jeelan-ds786/music-recommender-system/pull/34) | Merged as `79fbff6`; local `main` fast-forwarded to this commit. |
-| [ ] | E4-SS-02 | Consumer runtime and offsets | A | 9h | E4-SS-01, E3-SS-04 | | |
-| [ ] | E4-SS-03 | Retry and dead-letter handling | B | 8h | E4-SS-02 | | |
-| [ ] | E4-SS-04 | Operator-controlled replay | A | 7h | E4-SS-02, E4-SS-03 | | |
+| [~] | E4-SS-02 | Consumer runtime and offsets | Developer | 9h | E4-SS-01, E3-SS-04 | E4-PR-01 | Implemented locally with manual post-processing commits, leased idempotency, bounded workers, readiness, graceful drain, and tests. Real Kafka/PostgreSQL integration, container readiness, and SIGTERM exit-code verification pass; awaiting review and merge. |
+| [ ] | E4-SS-03 | Retry and dead-letter handling | Developer | 8h | E4-SS-02 | E4-PR-02 | |
+| [ ] | E4-SS-04 | Operator-controlled replay | Developer | 7h | E4-SS-02, E4-SS-03 | E4-PR-02 | |
 | [~] | E3-SS-05 | Playback observability/hardening | A | 5h | E3-SS-02, E3-SS-03, E3-SS-04 | Pending | Implemented locally: bounded Prometheus metrics, secure request completion logs, HTTP limits, tests, and service documentation. Awaiting review and merge. |
-| [ ] | E4-SS-05 | Multi-topic platform/observability | B | 7h | E4-SS-02, E4-SS-03, E4-SS-04 | | |
-| [ ] | S3-REL-01 | E2E, CI, docs, `v0.3.0` | A+B | 8h | All above | | |
+| [ ] | E4-SS-05 | Multi-topic platform/observability | Developer | 7h | E4-SS-02, E4-SS-03, E4-SS-04 | E4-PR-03 | |
+| [ ] | S3-REL-01 | E2E, CI, docs, `v0.3.0` | Developer | 8h | All above | Release PR | |
+
+## Epic 4 Three-PR Tracker
+
+| Status | PR | Type | Stories | Estimate | Exit gate |
+| --- | --- | --- | --- | ---: | --- |
+| [~] | E4-PR-01 | Streaming foundation | E4-SS-01, E4-SS-02 | 15h | Implementation and verification complete locally. Quality gates, migration, topic initialization, real Kafka/PostgreSQL tests, container readiness, and graceful SIGTERM shutdown pass; ready for review. |
+| [ ] | E4-PR-02 | Reliability and recovery | E4-SS-03, E4-SS-04 | 15h | Retry/DLQ and isolated replay integration tests pass; live offsets remain unchanged |
+| [ ] | E4-PR-03 | Platform observability | E4-SS-05 | 7h | Mixed-topic isolation, bounded metrics/logs, alerts, and runbook pass review |
+
+**Solo execution rule:** only one Epic 4 PR may be in progress at a time. Merge and verify each PR before starting the next.
+
+**E4-PR-01 verification:** `TestStoreClaimLifecycle` passed against PostgreSQL 16; `TestKafkaReaderCommitResumesAfterCommittedOffset` passed against Kafka 4.3.1; the Compose image built, `/health/live` and `/health/ready` returned `200`, and Docker SIGTERM produced exit code 0 without an OOM kill.
 
 ---
 
-## Daily Execution Tracker
+## Historical Execution Tracker
+
+This section preserves completed Epic 3 evidence. The remaining Epic 4 work follows the three-PR tracker above and the solo timeline in `Sprint3_TODOS.md`.
 
 ### Day 1 - Spillover gate and playback foundation
 
@@ -291,11 +305,11 @@ Update daily.
 
 | Metric | Target | Current |
 | --- | ---: | ---: |
-| Planned hours | 88 | 88 |
-| Protected buffer | 10 | 10 |
+| Remaining planned hours | 45 | 45 |
+| Remaining protected buffer | 4 | 4 |
 | P0 stories blocked over 1 day | 0 | 0 |
 | Open P0 PRs older than 1 day | 0 | 0 |
-| Stories merged | 12 | 5 |
+| Stories merged | 12 | 1 |
 | E2E clean passes | 2 | 0 |
 | Untriaged spillover items | 0 | 0 |
 
