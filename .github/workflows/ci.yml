@@ -114,6 +114,45 @@ jobs:
       - name: Test with race detection
         run: go test -race ./...
 
+  streaming-quality:
+    name: Streaming Go quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: music-event-streaming-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: music-event-streaming-service/go.mod
+          cache-dependency-path: music-event-streaming-service/go.sum
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "$unformatted" ]]; then
+            printf 'The following files need gofmt:\n%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Check module integrity
+        run: |
+          go mod tidy -diff
+          go mod verify
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build command
+        run: go build ./cmd/server
+
+      - name: Test with race detection
+        run: go test -race ./...
+
   vulnerabilities:
     name: Go vulnerabilities
     runs-on: ubuntu-latest
@@ -235,6 +274,46 @@ jobs:
           $$;
           SQL
 
+  streaming-migrations:
+    name: Streaming migration round trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: muse_streaming
+          POSTGRES_USER: muse
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U muse -d muse_streaming"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: music-event-streaming-service/go.mod
+          cache-dependency-path: music-event-streaming-service/go.sum
+
+      - name: Install migration tool
+        run: go install -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+
+      - name: Apply, roll back, and reapply migrations
+        working-directory: music-event-streaming-service
+        env:
+          DB_URL: postgres://muse:secret@localhost:5432/muse_streaming?sslmode=disable
+        run: |
+          migrate -path migrations -database "$DB_URL" up
+          migrate -path migrations -database "$DB_URL" down -all
+          migrate -path migrations -database "$DB_URL" up
+
   container:
     name: Container
     runs-on: ubuntu-latest
@@ -291,3 +370,22 @@ jobs:
 
       - name: Build image
         run: docker build --tag music-playback-service:${{ github.sha }} music-playback-service
+
+  streaming-container:
+    name: Streaming container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: music-event-streaming-service/Dockerfile
+
+      - name: Build image
+        run: docker build --tag music-event-streaming-service:${{ github.sha }} music-event-streaming-service
